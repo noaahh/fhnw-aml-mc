@@ -1,0 +1,80 @@
+erDiagram
+    ACCOUNT {
+        string account_id PK "Account ID"
+        string district_id FK "District ID"
+        date date "Account Creation Date"
+        string frequency "Issuance Frequency"
+    }
+    CLIENT {
+        string client_id PK "Client ID"
+        date birth_number "Birth Date"
+        string district_id FK "District ID"
+    }
+    DISPOSITION {
+        string disp_id PK "Disposition ID"
+        string client_id FK "Client ID"
+        string account_id FK "Account ID"
+        string type "Owner/User"
+    }
+    ORDER {
+        string order_id PK "Order ID"
+        string account_id FK "Account ID"
+        string bank_to "Recipient Bank"
+        string account_to "Recipient Account"
+        float amount "Debited Amount"
+        string k_symbol "Payment Characterization"
+    }
+    TRANSACTION {
+        string trans_id PK "Transaction ID"
+        string account_id FK "Account ID"
+        date date "Transaction Date"
+        string type "Credit/Withdrawal"
+        string operation "Transaction Mode"
+        float amount "Transaction Amount"
+        float balance "Balance After Transaction"
+        string k_symbol "Transaction Characterization"
+        string bank "Partner Bank"
+        string account "Partner Account"
+    }
+    LOAN {
+        string loan_id PK "Loan ID"
+        string account_id FK "Account ID"
+        date date "Loan Granted Date"
+        float amount "Loan Amount"
+        int duration "Loan Duration"
+        float payments "Monthly Payments"
+        string status "Loan Status"
+    }
+    CARD {
+        string card_id PK "Card ID"
+        string disp_id FK "Disposition ID"
+        string type "Card Type"
+        date issued "Card Issued Date"
+    }
+    DISTRICT {
+        string district_id PK "District ID"
+        string name "District Name"
+        string region "Region"
+        int no_of_inhabitants "No. of Inhabitants"
+        int no_of_municipalities_with_inhabitants_lt_500 "Municipalities < 500"
+        int no_of_municipalities_with_inhabitants_500_to_1999 "Municipalities 500-1999"
+        int no_of_municipalities_with_inhabitants_2000_to_9999 "Municipalities 2000-9999"
+        int no_of_municipalities_with_inhabitants_gt_10000 "Municipalities >10000"
+        int no_of_cities "No. of Cities"
+        float ratio_of_urban_inhabitants "Urban Inhabitants Ratio"
+        float average_salary "Average Salary"
+        float unemployment_rate_95 "Unemployment Rate '95"
+        float unemployment_rate_96 "Unemployment Rate '96"
+        int no_of_entrepreneurs_per_1000_inhabitants "Entrepreneurs per 1000"
+        int no_of_committed_crimes_95 "Crimes '95"
+        int no_of_committed_crimes_96 "Crimes '96"
+    }
+
+    DISTRICT ||--o{ ACCOUNT : "Located In"
+    DISTRICT ||--o{ CLIENT : "Resides In"
+    ACCOUNT ||--o{ DISPOSITION : "Associated With"
+    CLIENT ||--|| DISPOSITION : "Associated With"
+    DISPOSITION ||--|| CARD : "Has"
+    ACCOUNT ||--o{ ORDER : "Generates"
+    ACCOUNT ||--o{ TRANSACTION : "Records"
+    ACCOUNT ||--|| LOAN : "Can Have"
