@@ -1660,6 +1660,48 @@ fig.update_layout(
 fig.show()
 ```
 
+# Comparing Cardholders and Non-Cardholders
+
+```{python}
+
+# aggregate average values for cardholders and non-cardholders across features in golden_record_df. only use the balance columns for this example
+
+golden_cardholders = golden_record_df[golden_record_df['has_card']]
+golden_non_cardholders = golden_record_df[~golden_record_df['has_card']]
+
+
+def compare_avg_feature_values(cardholders, non_cardholders, feature_columns):
+    """
+    Compare the average feature values for cardholders and non-cardholders.
+
+    This function calculates the average values for each feature in the specified list of feature columns
+    for both cardholders and non-cardholders.
+
+    Parameters:
+    - cardholders (pd.DataFrame): DataFrame containing cardholder data.
+    - non_cardholders (pd.DataFrame): DataFrame containing non-cardholder data.
+    - feature_columns (list): List of column names to compare.
+
+    Returns:
+    - pd.Series: A Series containing the average values for each feature for cardholders and non-cardholders.
+    """
+    cardholder_avg = cardholders[feature_columns].mean()
+    non_cardholder_avg = non_cardholders[feature_columns].mean()
+
+    plt.figure(figsize=(12, 8))
+    plt.barh(cardholder_avg.index, cardholder_avg, color='skyblue', label='Cardholders')
+    plt.barh(non_cardholder_avg.index, non_cardholder_avg, color='orange', alpha=0.7, label='Non-Cardholders')
+    plt.xlabel('Average Value')
+    plt.title('Average Feature Values for Cardholders and Non-Cardholders')
+    plt.legend()
+    plt.show()
+
+
+compare_avg_feature_values(golden_cardholders, golden_non_cardholders, [col for col in golden_record_df.columns if 'balance' in col])
+compare_avg_feature_values(golden_cardholders, golden_non_cardholders, ["loan_amount"])
+
+```
+
 # Data Partitioning
 
 The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
