@@ -1595,7 +1595,7 @@ assert golden_record_df['account_id'].is_unique, "Each account_id should appear 
 ```
 
 ```{python}
-golden_record_df.to_csv("data/bronze_record.csv")
+golden_record_df.to_csv("data/golden_record.csv", index=False)
 ```
 
 ```{python}
