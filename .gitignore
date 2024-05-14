@@ -4,3 +4,9 @@
 .idea/
 
 data/non_transactional.csv
+
+main_files/
+
+main.html
+
+main.ipynb
