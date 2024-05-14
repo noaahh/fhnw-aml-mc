@@ -8,8 +8,6 @@ format:
 ---
 
 
-> Dominik Filliger & Noah Leuenberger
-
 The task can be found [here](https://spaces.technik.fhnw.ch/storage/uploads/spaces/82/exercises/20240218__AML_Trainingscenter_MiniChallenge_Kreditkarten_Aufgabenstellung-1708412668.pdf).
 
 # Setup
@@ -81,6 +79,7 @@ def plot_numerical_distributions(df, numerical_columns, kde=True, bins=30):
 
     # Create subplots
     fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(8, 5 * nrows))
+
 
     if nrows == 1:  # If there's only one numerical variable, wrap axes in a list
         axes = [axes]
@@ -1769,6 +1768,20 @@ from sklearn.ensemble import RandomForestClassifier
 
 model = RandomForestClassifier(random_state=42)
 train_evaluate_model(golden_record_df, feature_columns, model)
+```
+
+```{python}
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+
+# Example setup for Decision Tree
+decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
+
+# Example setup for Linear SVM
+linear_svm_model = SVC(kernel='linear', random_state=42)
+
+train_evaluate_model(golden_record_df, feature_columns, decision_tree_model)
+train_evaluate_model(golden_record_df, feature_columns, linear_svm_model)
 ```
 
 # WORKBENCH - remove later
