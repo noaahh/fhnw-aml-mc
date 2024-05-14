@@ -1662,7 +1662,10 @@ fig.show()
 
 # Comparing Cardholders and Non-Cardholders
 
+## Trends in Monthly Financial Metrics
 ```{python}
+golden_cardholders = golden_record_df[golden_record_df['has_card']]
+golden_non_cardholders = golden_record_df[~golden_record_df['has_card']]
 
 def plot_trends_with_medians(cardholders, non_cardholders, columns, title, median_ranges):
     """
@@ -1700,27 +1703,34 @@ def plot_trends_with_medians(cardholders, non_cardholders, columns, title, media
     plt.grid(True)
     plt.xticks(months, labels=[f'M_{month}' for month in months])  # Proper month labels
     plt.show()
+```
 
+### Monthly Balance Trends
+```{python}
 # Example usage with the correct labels
 median_ranges = [(0, 2), (9, 11)]  # First 3 months and last 3 months for a 12-month period
 balance_columns = [f'M_{i}_balance' for i in range(2, 14)]
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, balance_columns, 'Monthly Balance Trends', median_ranges)
 ```
 
+### Monthly Volume Trends
 ```{python}
 volume_columns = [f'M_{i}_volume' for i in range(2, 14)]  # Simulating monthly volume columns
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, volume_columns, 'Monthly Volume Trends', median_ranges)
 ```
 
+### Monthly Transaction Count Trends
 ```{python}
 transaction_count_columns = [f'M_{i}_transaction_count' for i in range(2, 14)]  # Simulating monthly transaction count columns
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, transaction_count_columns, 'Monthly Transaction Count Trends', median_ranges)
 ```
+### Monthly Positive and Negative Transaction Count Trends
 
 ```{python}
 positive_transaction_count_columns = [f'M_{i}_positive_transaction_count' for i in range(2, 14)]  # Simulating monthly positive transaction count columns
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, positive_transaction_count_columns, 'Monthly Positive Transaction Count Trends', median_ranges)
 ```
+### Monthly Negative Transaction Count Trends
 
 ```{python}
 negative_transaction_count_columns = [f'M_{i}_negative_transaction_count' for i in range(2, 14)]  # Simulating monthly negative transaction count columns
