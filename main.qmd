@@ -1664,41 +1664,115 @@ fig.show()
 
 ```{python}
 
-# aggregate average values for cardholders and non-cardholders across features in golden_record_df. only use the balance columns for this example
-
-golden_cardholders = golden_record_df[golden_record_df['has_card']]
-golden_non_cardholders = golden_record_df[~golden_record_df['has_card']]
-
-
-def compare_avg_feature_values(cardholders, non_cardholders, feature_columns):
+def plot_trends_with_medians(cardholders, non_cardholders, columns, title, median_ranges):
     """
-    Compare the average feature values for cardholders and non-cardholders.
-
-    This function calculates the average values for each feature in the specified list of feature columns
-    for both cardholders and non-cardholders.
+    Plots line graphs for average monthly values and annotates medians for specified ranges,
+    adjusting x-axis indices to match the month sequence from the start.
 
     Parameters:
-    - cardholders (pd.DataFrame): DataFrame containing cardholder data.
-    - non_cardholders (pd.DataFrame): DataFrame containing non-cardholder data.
-    - feature_columns (list): List of column names to compare.
+    - cardholders (pd.DataFrame): DataFrame containing data for cardholders.
+    - non_cardholders (pd.DataFrame): DataFrame containing data for non-cardholders.
+    - columns (list of str): List of column names ordered by time.
+    - title (str): Title for the plot.
+    - median_ranges (list of tuples): Each tuple contains start and end indices for calculating medians.
+    """
+    # Calculate averages
+    cardholder_avgs = cardholders[columns].mean()
+    non_cardholder_avgs = non_cardholders[columns].mean()
 
-    Returns:
-    - pd.Series: A Series containing the average values for each feature for cardholders and non-cardholders.
+    # Setup plot
+    months = list(range(1, 1 + len(columns)))
+    plt.figure(figsize=(14, 7))
+    plt.plot(months, cardholder_avgs.values, marker='o', linestyle='-', color='blue', label='Cardholders')
+    plt.plot(months, non_cardholder_avgs.values, marker='o', linestyle='-', color='orange', label='Non-Cardholders')
+
+    # Adding median line segments based on specified ranges
+    for start, end in median_ranges:
+        median_cardholder = cardholders[columns[start:end+1]].median().median()
+        median_non_cardholder = non_cardholders[columns[start:end+1]].median().median()
+        plt.hlines(median_cardholder, months[start], months[end], colors='darkblue', linestyles='--', label=f'Median {start+1}-{end+1} (Cardholders): {median_cardholder:.2f}')
+        plt.hlines(median_non_cardholder, months[start], months[end], colors='red', linestyles='--', label=f'Median {start+1}-{end+1} (Non-Cardholders): {median_non_cardholder:.2f}')
+
+    plt.title(title)
+    plt.xlabel('Month')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(True)
+    plt.xticks(months, labels=[f'M_{month}' for month in months])  # Proper month labels
+    plt.show()
+
+# Example usage with the correct labels
+median_ranges = [(0, 2), (9, 11)]  # First 3 months and last 3 months for a 12-month period
+balance_columns = [f'M_{i}_balance' for i in range(2, 14)]
+plot_trends_with_medians(golden_cardholders, golden_non_cardholders, balance_columns, 'Monthly Balance Trends', median_ranges)
+```
+
+```{python}
+volume_columns = [f'M_{i}_volume' for i in range(2, 14)]  # Simulating monthly volume columns
+plot_trends_with_medians(golden_cardholders, golden_non_cardholders, volume_columns, 'Monthly Volume Trends', median_ranges)
+```
+
+```{python}
+transaction_count_columns = [f'M_{i}_transaction_count' for i in range(2, 14)]  # Simulating monthly transaction count columns
+plot_trends_with_medians(golden_cardholders, golden_non_cardholders, transaction_count_columns, 'Monthly Transaction Count Trends', median_ranges)
+```
+
+```{python}
+positive_transaction_count_columns = [f'M_{i}_positive_transaction_count' for i in range(2, 14)]  # Simulating monthly positive transaction count columns
+plot_trends_with_medians(golden_cardholders, golden_non_cardholders, positive_transaction_count_columns, 'Monthly Positive Transaction Count Trends', median_ranges)
+```
+
+```{python}
+negative_transaction_count_columns = [f'M_{i}_negative_transaction_count' for i in range(2, 14)]  # Simulating monthly negative transaction count columns
+plot_trends_with_medians(golden_cardholders, golden_non_cardholders, negative_transaction_count_columns, 'Monthly Negative Transaction Count Trends', median_ranges)
+```
+
+
+```{python}
+
+def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
+    """
+    Plots grouped bar charts for average feature values of cardholders and non-cardholders.
+    
+    Parameters:
+    - cardholders (pd.DataFrame): DataFrame containing data for cardholders.
+    - non_cardholders (pd.DataFrame): DataFrame containing data for non-cardholders.
+    - feature_columns (list of str): List of column names whose averages to compare.
     """
     cardholder_avg = cardholders[feature_columns].mean()
     non_cardholder_avg = non_cardholders[feature_columns].mean()
 
-    plt.figure(figsize=(12, 8))
-    plt.barh(cardholder_avg.index, cardholder_avg, color='skyblue', label='Cardholders')
-    plt.barh(non_cardholder_avg.index, non_cardholder_avg, color='orange', alpha=0.7, label='Non-Cardholders')
-    plt.xlabel('Average Value')
-    plt.title('Average Feature Values for Cardholders and Non-Cardholders')
-    plt.legend()
+    index = range(len(feature_columns))
+    bar_width = 0.35
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    bars1 = ax.bar(index, cardholder_avg, bar_width, label='Cardholders', color='skyblue')
+    bars2 = ax.bar([p + bar_width for p in index], non_cardholder_avg, bar_width, label='Non-Cardholders', color='orange')
+
+    ax.set_xlabel('Feature')
+    ax.set_ylabel('Average Value')
+    ax.set_title('Average Feature Values by Group')
+    ax.set_xticks([p + bar_width / 2 for p in index])
+    ax.set_xticklabels(feature_columns)
+    ax.legend()
+
+    plt.xticks(rotation=45)  # Rotate feature names for better visibility
     plt.show()
 
+plot_grouped_comparison(golden_cardholders, golden_non_cardholders, [col for col in golden_record_df.columns if 'balance' in col])
+plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amount"])
 
-compare_avg_feature_values(golden_cardholders, golden_non_cardholders, [col for col in golden_record_df.columns if 'balance' in col])
-compare_avg_feature_values(golden_cardholders, golden_non_cardholders, ["loan_amount"])
+```
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def filter_columns_by_keyword(df, keyword):
+    """ Return columns that contain a specific keyword """
+    return [col for col in df.columns if keyword in col]
+
 
 ```
 
@@ -1882,6 +1956,7 @@ metrics_report = train_evaluate_model(train_df, test_df, feature_columns, model)
 visualize_results(metrics_report, "Logistic Regression")
 ```
 
+## BAV 
 
 # Model Engineering
 
@@ -1899,13 +1974,6 @@ from sklearn.tree import DecisionTreeClassifier
 
 decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
 visualize_results(train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model), "Decision Tree")
-```
-
-```{python}
-from sklearn.svm import SVC
-
-linear_svm_model = SVC(kernel='linear', random_state=42)
-visualize_results(train_evaluate_model(train_df, test_df, feature_columns, linear_svm_model), "Linear SVM")
 ```
 
 ------------------------------------------------------------------------
