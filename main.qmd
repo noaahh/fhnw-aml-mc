@@ -2,14 +2,10 @@
 title: AML Mini-Challenge - Credit Card Affinity Modelling
 jupyter: python3
 author: Dominik Filliger & Noah Leuenberger
-format: 
+format:
   html:
     toc: true
 ---
-
-The task can be found [here](https://spaces.technik.fhnw.ch/storage/uploads/spaces/82/exercises/20240218__AML_Trainingscenter_MiniChallenge_Kreditkarten_Aufgabenstellung-1708412668.pdf).
-
-# Setup
 
 ```{python}
 import pandas as pd
@@ -434,7 +430,6 @@ axs[-1].set_xlabel('Month')
 
 plt.tight_layout()
 plt.show()
-
 ```
 
 ```{python}
@@ -1663,6 +1658,7 @@ fig.show()
 # Comparing Cardholders and Non-Cardholders
 
 ## Trends in Monthly Financial Metrics
+
 ```{python}
 golden_cardholders = golden_record_df[golden_record_df['has_card']]
 golden_non_cardholders = golden_record_df[~golden_record_df['has_card']]
@@ -1706,6 +1702,7 @@ def plot_trends_with_medians(cardholders, non_cardholders, columns, title, media
 ```
 
 ### Monthly Balance Trends
+
 ```{python}
 # Example usage with the correct labels
 median_ranges = [(0, 2), (9, 11)]  # First 3 months and last 3 months for a 12-month period
@@ -1714,22 +1711,26 @@ plot_trends_with_medians(golden_cardholders, golden_non_cardholders, balance_col
 ```
 
 ### Monthly Volume Trends
+
 ```{python}
 volume_columns = [f'M_{i}_volume' for i in range(2, 14)]  # Simulating monthly volume columns
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, volume_columns, 'Monthly Volume Trends', median_ranges)
 ```
 
 ### Monthly Transaction Count Trends
+
 ```{python}
 transaction_count_columns = [f'M_{i}_transaction_count' for i in range(2, 14)]  # Simulating monthly transaction count columns
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, transaction_count_columns, 'Monthly Transaction Count Trends', median_ranges)
 ```
+
 ### Monthly Positive and Negative Transaction Count Trends
 
 ```{python}
 positive_transaction_count_columns = [f'M_{i}_positive_transaction_count' for i in range(2, 14)]  # Simulating monthly positive transaction count columns
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, positive_transaction_count_columns, 'Monthly Positive Transaction Count Trends', median_ranges)
 ```
+
 ### Monthly Negative Transaction Count Trends
 
 ```{python}
@@ -1737,9 +1738,7 @@ negative_transaction_count_columns = [f'M_{i}_negative_transaction_count' for i 
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, negative_transaction_count_columns, 'Monthly Negative Transaction Count Trends', median_ranges)
 ```
 
-
 ```{python}
-
 def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
     """
     Plots grouped bar charts for average feature values of cardholders and non-cardholders.
@@ -1771,7 +1770,6 @@ def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
 
 plot_grouped_comparison(golden_cardholders, golden_non_cardholders, [col for col in golden_record_df.columns if 'balance' in col])
 plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amount"])
-
 ```
 
 ```{python}
@@ -1782,8 +1780,6 @@ import seaborn as sns
 def filter_columns_by_keyword(df, keyword):
     """ Return columns that contain a specific keyword """
     return [col for col in df.columns if keyword in col]
-
-
 ```
 
 # Data Partitioning
@@ -1809,6 +1805,7 @@ As we can see the distribution of the target variable is maintained in both sets
 # Model Construction
 
 ```{python}
+import numpy as np
 from sklearn.model_selection import cross_validate
 from sklearn.metrics import (
     make_scorer,
@@ -1821,7 +1818,6 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-
 
 def train_evaluate_model(
     train_df, test_df, feature_columns, model, target_column="has_card", cv=10
@@ -1838,6 +1834,8 @@ def train_evaluate_model(
 
     Returns:
     - metrics_report: Summary of evaluation metrics including mean and standard deviation for accuracy, F1, AUC-ROC, precision, recall.
+    - y_test: True labels for the test set.
+    - y_pred_proba: Predicted probabilities for the test set.
     """
     numerical_features = [
         col
@@ -1885,10 +1883,12 @@ def train_evaluate_model(
 
     pipeline.fit(X_train, y_train)
 
+    y_pred_proba = pipeline.predict_proba(X_test) if hasattr(pipeline, "predict_proba") else np.nan
+
     test_metrics = {
         "accuracy": pipeline.score(X_test, y_test),
         "f1": f1_score(y_test, pipeline.predict(X_test)),
-        "roc_auc": roc_auc_score(y_test, pipeline.predict_proba(X_test)[:, 1]) if hasattr(pipeline, "predict_proba") else np.nan,
+        "roc_auc": roc_auc_score(y_test, y_pred_proba[:, 1]) if hasattr(pipeline, "predict_proba") else np.nan,
         "precision": precision_score(y_test, pipeline.predict(X_test)),
         "recall": recall_score(y_test, pipeline.predict(X_test))
     }
@@ -1896,7 +1896,7 @@ def train_evaluate_model(
     return {
         "train": {metric: {"folds": train_metrics_summary[f"test_{metric}"].tolist(), "mean": train_metrics_summary[f"test_{metric}"].mean(), "std": train_metrics_summary[f"test_{metric}"].std()} for metric in scoring},
         "test": {metric: test_metrics[metric] for metric in scoring}
-    }
+    }, y_test, y_pred_proba
 ```
 
 ```{python}
@@ -1911,25 +1911,32 @@ feature_columns = [
 train_evaluate_model(train_df, test_df, feature_columns, model)
 ```
 
-
 ```{python}
-def visualize_results(metrics_report, model_name, cv=10):
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scikitplot as skplt
+import numpy as np
+
+def visualize_results(metrics_report, model_name, y_true, y_pred_proba, cv=10):
     """
     Visualizes the results from the given metrics report dictionary.
 
     Parameters:
     - metrics_report: Dictionary containing training and test metrics.
+    - model_name: Name of the model.
+    - y_true: True labels.
+    - y_pred_proba: Predicted probabilities.
+    - cv: Number of cross-validation folds.
 
     Returns:
     - None: Displays the plots.
     """
-    
     train_metrics = metrics_report['train']
     test_metrics = metrics_report['test']
     
     metrics = train_metrics.keys()
 
-    # Plot validation metrics with error bars using Matplotlib
+    # Plot validation metrics with error bars
     val_means = [train_metrics[metric]['mean'] for metric in metrics]
     val_stds = [train_metrics[metric]['std'] for metric in metrics]
 
@@ -1962,8 +1969,21 @@ def visualize_results(metrics_report, model_name, cv=10):
     plt.grid(True)
     plt.show()
 
-metrics_report = train_evaluate_model(train_df, test_df, feature_columns, model)
-visualize_results(metrics_report, "Logistic Regression")
+    # Check if the model has predicted probabilities
+    if not np.isnan(y_pred_proba).all():
+        # Plot AUROC curve
+        skplt.metrics.plot_roc(y_true, y_pred_proba, figsize=(10, 6))
+        plt.title(f'{model_name}: ROC Curve')
+        plt.show()
+
+        # Plot precision-recall curve
+        skplt.metrics.plot_precision_recall(y_true, y_pred_proba, figsize=(10, 6))
+        plt.title(f'{model_name}: Precision-Recall Curve')
+        plt.show()
+
+# Assuming train_evaluate_model and other necessary variables are defined
+metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, model)
+visualize_results(metrics_report, "Logistic Regression", y_test, y_pred_proba)
 ```
 
 ## BAV 
@@ -1976,14 +1996,17 @@ visualize_results(metrics_report, "Logistic Regression")
 from sklearn.ensemble import RandomForestClassifier
 
 model = RandomForestClassifier(random_state=42)
-visualize_results(train_evaluate_model(train_df, test_df, feature_columns, model), "Random Forest")
+metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, model)
+visualize_results(metrics_report, "Random Forest", y_test, y_pred_proba)
 ```
 
 ```{python}
 from sklearn.tree import DecisionTreeClassifier
 
+
 decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
-visualize_results(train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model), "Decision Tree")
+metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model)
+visualize_results(metrics_report, "Decision Tree", y_test, y_pred_proba)
 ```
 
 ------------------------------------------------------------------------
@@ -2031,3 +2054,4 @@ Frequency analysis of the transactions could be interesting as the hypothesis mi
 
 -   Visualise monthly product puchases
 -   Viz environment of selected client and reference clients and answer the questions are they from a comparable environment
+

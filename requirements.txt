@@ -1,8 +1,10 @@
-pandas
-matplotlib
-seaborn
-numpy
+pandas~=2.2.1
+matplotlib~=3.8.3
+seaborn~=0.13.2
+numpy~=1.26.4
 jupyter
-scikit-learn
-tqdm
+scikit-learn~=1.4.2
+tqdm~=4.66.4
 plotly
+scipy==1.11.4
+scikit-plot
