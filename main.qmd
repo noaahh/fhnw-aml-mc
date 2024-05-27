@@ -2005,7 +2005,7 @@ feature_columns = [ # Reducing the number of features for the baseline model as 
 ] + [col for col in golden_record_df.columns if 'M_' in col and ('_balance' in col or '_volume' in col)]
 
 baseline_metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, baseline_model)
-visualize_results(metrics_report, "Baseline: Logistic Regression", y_test, y_pred_proba)
+visualize_results(baseline_metrics_report, "Baseline: Logistic Regression", y_test, y_pred_proba)
 ```
 
 
