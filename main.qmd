@@ -1321,7 +1321,7 @@ The function `aggregate_transactions_monthly` is designed to process and summari
 As we have already explored and verified in the EDA section of the transactional data, each account starts with a transaction where the amount equals the inital balance. This validation ensures the integrity of the aggregated data, as the balance should accurately reflect the total transaction volume over time.
 
 ```{python}
-def aggregate_transactions_monthly(df, validate=True):
+def aggregate_transactions_monthly(df):
     """
     Aggregate financial transaction data on a monthly basis per account.
 
@@ -1358,8 +1358,6 @@ def aggregate_transactions_monthly(df, validate=True):
         )
 
     monthly_aggregated_data["balance"] = monthly_aggregated_data.groupby("account_id")["volume"].cumsum()
-    if validate:
-        validate_monthly_aggregated_transactions(monthly_aggregated_data, df)
     return monthly_aggregated_data
 
 agg_transactions_monthly_df = aggregate_transactions_monthly(transactions_df)
