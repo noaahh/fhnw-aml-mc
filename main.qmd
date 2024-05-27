@@ -5,23 +5,55 @@ author: Dominik Filliger & Noah Leuenberger
 format:
   html:
     toc: true
+    number-sections: true
+    code-overflow: scroll
+    code-copy: hover
+execute: 
+    warning: true
 ---
 
 ```{python}
 import pandas as pd
 from datetime import datetime
+from collections import OrderedDict
 
 import numpy as np
-
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set_theme()
 #plt.style.use('seaborn-white')
 #plt.style.use('ggplot')
+
+data_reduction = OrderedDict()
 ```
 
+# Data Import & Wrangling
+
 ## Helper Functions
+```{python}
+def remap_values(df, column, mapping):
+    # assert that all values in the column are in the mapping except for NaN
+    assert df[column].dropna().isin(mapping.keys()).all()
+    
+    df[column] = df[column].map(mapping, na_action='ignore')
+    return df
+
+def map_empty_to_nan(df, column):
+    if df[column].dtype != 'object':
+        return df
+
+    df[column] = df[column].replace(r'^\s*$', np.nan, regex=True)
+    return df
+
+def read_csv(file_path, sep=";", dtypes=None):
+    df = pd.read_csv(file_path, sep=sep, dtype=dtypes)
+    
+    for col in df.columns:
+        df = map_empty_to_nan(df, col)
+        
+    return df
+```
 
 ```{python}
 def plot_categorical_variables(df, categorical_columns, fill_na_value='NA'):
@@ -119,38 +151,8 @@ def add_percentage_labels(ax, hue_order):
         ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=9, color='white', weight='bold')
 ```
 
-```{python}
-from collections import OrderedDict
-data_reduction = OrderedDict()
-```
-
-# Data Import & Wrangling
-
-```{python}
-def remap_values(df, column, mapping):
-    # assert that all values in the column are in the mapping except for NaN
-    assert df[column].dropna().isin(mapping.keys()).all()
-    
-    df[column] = df[column].map(mapping, na_action='ignore')
-    return df
-
-def map_empty_to_nan(df, column):
-    if df[column].dtype != 'object':
-        return df
-
-    df[column] = df[column].replace(r'^\s*$', np.nan, regex=True)
-    return df
-
-def read_csv(file_path, sep=";", dtypes=None):
-    df = pd.read_csv(file_path, sep=sep, dtype=dtypes)
-    
-    for col in df.columns:
-        df = map_empty_to_nan(df, col)
-        
-    return df
-```
-
-## Accounts
+## Entities
+### Accounts
 
 ```{python}
 accounts_df = read_csv("data/account.csv")
@@ -189,7 +191,7 @@ plot_categorical_variables(accounts_df, ['account_frequency'])
 plot_numerical_distributions(accounts_df, ['account_created'])
 ```
 
-## Clients
+### Clients
 
 ```{python}
 clients_df = read_csv("data/client.csv")
@@ -252,7 +254,7 @@ clients_df.describe()
 plot_numerical_distributions(clients_df, ['birth_date', 'age'])
 ```
 
-## Dispositions
+### Dispositions
 
 ```{python}
 dispositions_df = read_csv("data/disp.csv")
@@ -277,7 +279,7 @@ As the goal of this model is to address accounts and not client directly we will
 dispositions_df = dispositions_df[dispositions_df['type'] == 'OWNER']
 ```
 
-## Orders
+### Orders
 
 ```{python}
 orders_df = read_csv("data/order.csv")
@@ -320,7 +322,7 @@ plot_categorical_variables(orders_df, ['k_symbol', 'bank_to'])
 plot_numerical_distributions(orders_df, ['debited_amount'])
 ```
 
-## Transactions
+### Transactions
 
 ```{python}
 # column 8 is the 'bank' column which contains NaNs and must be read as string
@@ -386,17 +388,16 @@ The balance distribution also showcases that there are accounts with a negative 
 
 According to description of the field balance: "balance after transaction"
 
+#### Transaction Amounts and Counts by Month
+
 ```{python}
 # Getting a list of unique years from the dataset
 transactions_df['year'] = transactions_df['date'].dt.year
 transactions_df['month'] = transactions_df['date'].dt.month
 
 months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-
 years = sorted(transactions_df['year'].unique())
 
-# Creating a figure with subplots for each year: one row for each year with two plots (box plot and bar chart)
 fig, axs = plt.subplots(len(years) * 2, 1, figsize=(15, 6 * len(years)), sharex=True, gridspec_kw={'height_ratios': [3, 1] * len(years)})
 
 for i, year in enumerate(years):
@@ -433,18 +434,6 @@ plt.show()
 ```
 
 ```{python}
-# Importing required libraries for visualization
-import matplotlib.pyplot as plt
-import pandas as pd
-
-# Assuming 'transactions' DataFrame already contains 'year' and 'month' columns
-# and is ready for visualization
-
-# Getting a list of unique years and defining month labels
-years = sorted(transactions_df['year'].unique())
-months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-# Adjusting the figure layout to place visualizations for each year next to each other
 fig, axs = plt.subplots(2, len(years), figsize=(40 * len(years) / 2, 30), sharey='row', gridspec_kw={'height_ratios': [3, 1]})
 
 for i, year in enumerate(years):
@@ -475,12 +464,12 @@ for i, year in enumerate(years):
     ax_bar.set_xticks(range(1, 13))
     ax_bar.set_xticklabels(months)
 
-# Setting a common x-label for the entire figure
 fig.text(0.5, 0.04, 'Month', ha='center')
-
 plt.tight_layout()
 plt.show()
 ```
+
+#### Negative Balances
 
 ```{python}
 negative_balances = transactions_df[transactions_df['balance'] < 0]
@@ -490,7 +479,7 @@ print(f"Number of transactions with negative balance: {len(negative_balances)}")
 
 There appear to be 2999 transactions which have a negative balance, therefore after the transaction the account balance was negative. This implies that these accounts are in some kind of debt.
 
-## Loans
+### Loans
 
 ```{python}
 loans_df = read_csv("data/loan.csv")
@@ -540,7 +529,7 @@ The distribution of durations seems to be even.
 plot_numerical_distributions(loans_df, ['granted_date'])
 ```
 
-## Credit Cards
+### Credit Cards
 
 ```{python}
 cards_df = read_csv("data/card.csv")
@@ -566,7 +555,7 @@ plot_categorical_variables(cards_df, ['type'])
 plot_numerical_distributions(cards_df, ['issued'])
 ```
 
-## Demographic data
+### Demographic data
 
 ```{python}
 districts_df = read_csv("data/district.csv")
@@ -623,7 +612,7 @@ plot_categorical_variables(districts_df, ['region'])
 
 We need to differentiate between the domicile of the client and account, as they can be different.
 
-# Relationships
+## Data Relationships
 
 Following the documentation of the dataset, there are multiple relationships that need to be validated. https://sorry.vse.cz/\~berka/challenge/PAST/index.html
 
@@ -634,6 +623,8 @@ The ERD according to the descriptions on https://sorry.vse.cz/\~berka/challenge/
 This ERD shows how the data appears in the dataset:
 
 [![](https://mermaid.ink/img/pako:eNqtV99P2zAQ_lesvOyFbjCJSq2mSSHlRzRoUVq0F6TITdzWIrEz2xnqgP99ZydNTeIUhOgD5JzvPvvufJ-dJy_hKfHGHhETitcC5_cMwc8PgtnddIGeKlP_pBKUrRFOEl4yFdMU3f5C955f2Sic3HsdcEr1Q2LQFxo9qQda8BQrUv3ZEwaCYEU5QxMYd3CvBPlTEpZswSeUssQsIehiN7hzeKn-BdfhuTOcJKPEiiYwpmt1SyrUJmZlviQCgGfa7Fvae8KuFzYJ57ezebgIZ1PH6oCoaNYGJAWX1OTEme19LBe9sXSrePFmFdW20IWZPTIivt1JIloxzKLJeeRYPRcpEc3yZ9r6hNUsMXuIFQdYRBJamBjPYOwAbwtd09sOq4xjhXBupoVUkyVVJEV-3gbWzA-x3OZLngH2Fm9zzRpssMCJIoL-M_u2laRF5E_nftBTaCUwk02qFtoCrt5Kvy9hdlfZlD27ti4z9F1K1bffVG1SgR9x5oDygoiqOV8z34CYHEirDe2mtgIvcWY6GVqsfvJXkFRk-R6uhz1JX01a28lUUSjY3m_sJAvY2kR1la9nvqu8EBlrqnsNxmeV1XBdQsR6t7br2sq-wXbTTuFlWjblNKhJbXfZimq3S0DecKY22RbVDSAdAUmFVSl3rHNjtZXZjyYuXcYi3asyGL0HTGGr7GGB3O1wTbeA505WKZwjkMjdjJVlp3Wv2osoDBZuyW60__bAkVfDGc6JDZqC7YAJsq7KE5mHdv0Yj_kqpmyDQbdwVZ4p_4r4CoX7QbdXXjIKyogzSByR8SP0vc0UZyo-PT7W9X4FRD8QDH-MEhxBk-OT0WjU5YWXA_3mY9TfjyvukZNbvx2MPky-VvEJMDiS8dOMu1mTCtJUJDB2t7VMy2mHUiy1XLyq5p0es4uJIg13tPtfkOY1iSWop9B3I78aQHMz0HUoGcmLjJsejmENJB6d6gmtYT0XQV9Gp-_yHvZ4D93pAYQghSCMlELGcLCYHLfCP7dBCEDopD_fPM-pAkGME0FzqKOJJzDP7SAOeQ1tr6GlAC0NeH4eDPhTc2UeG7lLsFbksOnUNrq-kI5NS0uawiR78I6qxtp3RO3gS8kTaibQp_TOq6bUTs_P73WyYbWnUWTtcoVlz4qqG5_GXEJJdNn7kPa1pwo2gWuhEw1Tm-NzbPSXoSvYyhrnHXk5ETmmKXynGMG999SGaJ3U0JSscJmZI-0FoLhUfL5liTdWoiRHXlloZa8_brzxCmcSRvUVh4ub6tsn4WxF197LfwBRISI?type=png)](https://mermaid.live/edit#pako:eNqtV99P2zAQ_lesvOyFbjCJSq2mSSHlRzRoUVq0F6TITdzWIrEz2xnqgP99ZydNTeIUhOgD5JzvPvvufJ-dJy_hKfHGHhETitcC5_cMwc8PgtnddIGeKlP_pBKUrRFOEl4yFdMU3f5C955f2Sic3HsdcEr1Q2LQFxo9qQda8BQrUv3ZEwaCYEU5QxMYd3CvBPlTEpZswSeUssQsIehiN7hzeKn-BdfhuTOcJKPEiiYwpmt1SyrUJmZlviQCgGfa7Fvae8KuFzYJ57ezebgIZ1PH6oCoaNYGJAWX1OTEme19LBe9sXSrePFmFdW20IWZPTIivt1JIloxzKLJeeRYPRcpEc3yZ9r6hNUsMXuIFQdYRBJamBjPYOwAbwtd09sOq4xjhXBupoVUkyVVJEV-3gbWzA-x3OZLngH2Fm9zzRpssMCJIoL-M_u2laRF5E_nftBTaCUwk02qFtoCrt5Kvy9hdlfZlD27ti4z9F1K1bffVG1SgR9x5oDygoiqOV8z34CYHEirDe2mtgIvcWY6GVqsfvJXkFRk-R6uhz1JX01a28lUUSjY3m_sJAvY2kR1la9nvqu8EBlrqnsNxmeV1XBdQsR6t7br2sq-wXbTTuFlWjblNKhJbXfZimq3S0DecKY22RbVDSAdAUmFVSl3rHNjtZXZjyYuXcYi3asyGL0HTGGr7GGB3O1wTbeA505WKZwjkMjdjJVlp3Wv2osoDBZuyW60__bAkVfDGc6JDZqC7YAJsq7KE5mHdv0Yj_kqpmyDQbdwVZ4p_4r4CoX7QbdXXjIKyogzSByR8SP0vc0UZyo-PT7W9X4FRD8QDH-MEhxBk-OT0WjU5YWXA_3mY9TfjyvukZNbvx2MPky-VvEJMDiS8dOMu1mTCtJUJDB2t7VMy2mHUiy1XLyq5p0es4uJIg13tPtfkOY1iSWop9B3I78aQHMz0HUoGcmLjJsejmENJB6d6gmtYT0XQV9Gp-_yHvZ4D93pAYQghSCMlELGcLCYHLfCP7dBCEDopD_fPM-pAkGME0FzqKOJJzDP7SAOeQ1tr6GlAC0NeH4eDPhTc2UeG7lLsFbksOnUNrq-kI5NS0uawiR78I6qxtp3RO3gS8kTaibQp_TOq6bUTs_P73WyYbWnUWTtcoVlz4qqG5_GXEJJdNn7kPa1pwo2gWuhEw1Tm-NzbPSXoSvYyhrnHXk5ETmmKXynGMG999SGaJ3U0JSscJmZI-0FoLhUfL5liTdWoiRHXlloZa8_brzxCmcSRvUVh4ub6tsn4WxF197LfwBRISI)
+
+In order to also validate the relationships from a algorithmic perspective, we can use the following code:
 
 ```{python}
 # Verify 1:1 relationships between CLIENT, LOAN and DISPOSITION
@@ -669,7 +660,7 @@ assert set(dispositions_df['client_id']).issubset(
 assert set(cards_df['disp_id']).issubset(set(dispositions_df['disp_id'])), "All disp_ids in CARD should exist in DISPOSITION."
 ```
 
-# Non-transactional Data
+# Data Preparation: Non-Transactional Data
 
 ```{python}
 orders_pivot_df = orders_df.pivot_table(index='account_id',
@@ -725,15 +716,13 @@ def merge_non_transactional_data(clients, districts, dispositions, accounts, ord
     return final_df
 
 non_transactional_df = merge_non_transactional_data(clients_df, districts_df, dispositions_df, accounts_df, orders_pivot_df, loans_df, cards_df)
+non_transactional_df.to_csv("data/non_transactional.csv", index=False)
 non_transactional_df.info()
 ```
 
-```{python}
-non_transactional_df.to_csv("./data/non_transactional.csv")
-```
+# Exploratory Data Analysis
 
-## EDA
-
+## Non-transactional Data
 ### Card Holders
 
 ```{python}
@@ -942,8 +931,71 @@ plt.tight_layout()
 plt.show()
 ```
 
-# Transactional Data
+## Transactional Data
 
+TODO: Add more EDA for transactional data
+
+```{python}
+zero_amount_transactions_df = transactions_df[transactions_df['amount'] == 0]
+
+zero_amount_transactions_info = {
+    'total_zero_amount_transactions': len(zero_amount_transactions_df),
+    'unique_accounts_with_zero_amount': zero_amount_transactions_df['account_id'].nunique(),
+    'transaction_type_distribution': zero_amount_transactions_df['transaction_type'].value_counts(normalize=True),
+    'operation_distribution': zero_amount_transactions_df['operation'].value_counts(normalize=True),
+    'k_symbol_distribution': zero_amount_transactions_df['k_symbol'].value_counts(normalize=True)
+}
+
+zero_amount_transactions_info, len(zero_amount_transactions_info)
+```
+
+```{python}
+accounts_with_zero_amount_transactions = accounts_df[accounts_df['account_id'].isin(zero_amount_transactions_df['account_id'].unique())]
+accounts_with_zero_amount_transactions
+```
+
+```{python}
+# Clean up unnecessary variables
+del accounts_with_zero_amount_transactions 
+del zero_amount_transactions_df
+del zero_amount_transactions_info
+```
+
+Validating first transactions where the amount equals the balance is essential for the integrity of our aggregated data analysis. This specific assertion underpins the reliability of our subsequent aggregation operations by ensuring each account's financial history starts from a verifiable point.
+
+```{python}
+def validate_first_transactions(transactions):
+    """
+    Validates that for each account in the transactions DataFrame, there is at least
+    one transaction where the amount equals the balance on the account's first transaction date.
+
+    Parameters:
+    - transactions (pd.DataFrame): DataFrame containing transaction data with columns
+      'account_id', 'date', 'amount', and 'balance'.
+
+    Raises:
+    - AssertionError: If not every account has a first transaction where the amount equals the balance.
+    """
+
+    first_dates = transactions.groupby('account_id')['date'].min().reset_index(name='first_date')
+
+    first_trans = pd.merge(transactions, first_dates, how='left', on=['account_id'])
+
+    first_trans_filtered = first_trans[(first_trans['date'] == first_trans['first_date']) & (first_trans['amount'] == first_trans['balance'])]
+
+    first_trans_filtered = first_trans_filtered.drop_duplicates(subset=['account_id'])
+
+    unique_accounts = transactions['account_id'].nunique()
+    assert unique_accounts == first_trans_filtered['account_id'].nunique(), "Not every account has a first transaction where the amount equals the balance."
+
+    return "Validation successful: Each account has a first transaction where the amount equals the balance."
+
+validate_first_transactions(transactions_df)
+```
+
+We can confirm the truth of the assertions made. It is certain that there is a transaction with an amount equal to the balance in the transaction history of any account on the first date.
+
+# Data Preparation: Transactional Data
 ## Set artificial issue date for non-card holders
 
 ```{python}
@@ -974,7 +1026,7 @@ non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(s
 
 plt.figure(figsize=(12, 8))
 sns.histplot(non_transactional_w_card_df['months_since_account_to_card'], kde=True, bins=30)
-plt.title('Distribution of Months from Account Creation to Card Issuance')
+plt.title('Distribution of Months from Account Creation to Card Issuance (for Card Holders)')
 plt.xlabel('Months')
 plt.ylabel('Count')
 plt.grid(True)
@@ -982,40 +1034,23 @@ plt.tight_layout()
 plt.show()
 ```
 
-### Match by similar transaction activity
+## Match by similar transaction activity
 
-The following approaches are in discussion: - Looking at the distributions above extract the amount of history a buyer most likely has at the issue data of the card - For each non buyer, find a buyer which was active in a similar time window (Jaccard similarity on the Year-Month sets)
+The following approaches were considered to match non-card holders with card holders:
 
-#### NEW IDEA
+1. Looking at the distributions above extract the amount of history a buyer most likely has at the issue data of the card 
+2. For each non buyer, find a buyer which was active in a similar time window (Jaccard similarity on the Year-Month sets). Instead of looking at the full activity of a buyer, we only look at the pre-purchase activity as there is reason to believe that clients may change their patterns after purchasing date and therefore add unwanted bias.
 
-Instead of looking at the full activity of a buyer, we only look at the pre-purchase activity as there is reason to believe that clients may change their patterns after purchasing date and therefore add unwanted bias.
+The second approach is chosen as it is provides an intuitive way to match clients based on their activity which is not only explainable but also provides a way to match clients based on their behavior. It strikes a balance of not finding a perfect match but a good enough match to focus on the discriminative features of the data.
 
+The following image serves as an technical overview of the matching process:
 ![](./docs/IMG_BBEF82A6C6B5-1.jpeg)
-
-### Focus on Contextual Engagement
-
-Our approach to setting artificial card issue date for non-cardholders goes beyond simple feature matching. We concentrate on the periods during which clients engage with the bank in the form of transactions. This method assumes that clients active during similar periods might be influenced by the same economic and societal conditions, providing a more nuanced foundation for establishing connections between current cardholders and potential new ones.
 
 The process emphasizes matching based on the timing of activity, rather than a wide array of characteristics. By identifying when both existing cardholders and non-cardholders interacted with the bank, we can infer a level of behavioral alignment that extends beyond mere transactional data. This alignment suggests a shared response to external conditions.
 
-### Mechanism of Matching
+The resolution of the activity matrix is a binary matrix where each row represents a client and each column represents a month. A value of 1 indicates activity in a given month, while 0 indicates inactivity. Therefore we concentrate on the periods during which clients engage with the bank in the form of transactions
 
-Our matching utilizes the Jaccard similarity index to compare activity patterns:
-
--   **Activity Comparison**: We compare a vector representing an existing cardholder's monthly activity against a matrix of non-cardholders' activity patterns. Here we only consider the activity from the first transaction period across all customers to the card issue date.
--   **Use of Jaccard Index**: This metric helps us quantify the resemblance between the activity patterns, focusing on the occurrence of activity rather than its volume, to identify meaningful parallels.
-
-### Eligibility and Selection
-
-Potential matches are subjected to specific criteria to ensure alignment for later model construction:
-
-1.  **Account History**: Non-cardholders must have an established history of interaction, with at least 25 months of history between account creation and card issuance (12 months = period as a new customer + 13 months = one year of history + 1 month lag).
-2.  **Period of Activity**: The analysis considers activities up to the card issuance date of the cardholder, aligning potential non-cardholders based on their response to similar conditions.
-3.  **Selection Process**: From the non-cardholders with high similarity scores, one is randomly selected from the top-N candidates to maintain fairness in the matching process.
-
-### Objective of the Process
-
-This matching strategy is designed to identify potential cardholders whose historical interaction patterns suggest a fit with card holders. The focus on specific periods of engagement, backed by eligibility criteria and a fair selection process, ensures that new additions to our cardholder base share a commonality that goes beyond surface-level similarities without searching a direct twin for each card holder.
+**Assumption**: This assumes that clients active during similar periods might be influenced by the same economic and societal conditions, providing a more nuanced foundation for establishing connections between current cardholders and potential new ones.
 
 ### Construction of the Activity Matrix
 
@@ -1079,9 +1114,17 @@ activity_matrix = prepare_activity_matrix(transactions_df)
 plot_activity_matrix(activity_matrix)
 ```
 
+### Eligibility Criteria
+After constructing the activity matrix, we check for eligibility of non-cardholders to be matched with cardholders. This ensures alignment for later model construction. The eligibility criteria are as follows:
+
+1.  **Account History**: Non-cardholders must have an established history of interaction, with at least 25 months of history between account creation and card issuance (12 months (= New customer period) + 13 months (= one year of history) + 1 month (Lag period)).
+2.  **Account Creation Date**: The account creation date of a non-cardholder must precede the card issuance date of the cardholder as this is a prerequisite for the matching process to work correctly when we set the issue date for non-card holders.
+
 ```{python}
 from sklearn.metrics import pairwise_distances
 from tqdm import tqdm
+
+ELIGIBILITY_THRESHOLD_HIST_MONTHS = 25
 
 def check_eligibility_for_matching(non_cardholder, cardholder, verbose=False):
     """
@@ -1104,9 +1147,57 @@ def check_eligibility_for_matching(non_cardholder, cardholder, verbose=False):
     period_diff = (cardholder['card_issued'].to_period('M') - non_cardholder['account_created'].to_period('M')).n
 
     if verbose:
-        print(f"Card issued: {cardholder['card_issued']}, Account created: {non_cardholder['account_created']}, Period diff: {period_diff}, Eligible: {period_diff >= 25}")
+        print(f"Card issued: {cardholder['card_issued']}, Account created: {non_cardholder['account_created']}, Period diff: {period_diff}, Eligible: {period_diff >= ELIGIBILITY_THRESHOLD_HIST_MONTHS}")
 
-    return period_diff >= 25
+    return period_diff >= ELIGIBILITY_THRESHOLD_HIST_MONTHS
+```
+
+### Matching Process
+Next up we will implement the matching process. Our matching utilizes the Jaccard similarity index to compare activity patterns: We compare a vector representing an existing cardholder's monthly activity against a matrix of non-cardholders' activity patterns. Here we only consider the activity from the first transaction period across all customers to the card issue date.
+
+The Jaccard similarity index is calculated as the intersection of active months divided by the union of active months between the two clients. This index ranges from 0 to 1, with higher values indicating greater similarity in activity patterns.
+
+$$J(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
+
+The function `match_cardholders_with_non_cardholders` will perform the following steps:
+1. **Data Preparation**: The function prepares the activity matrix and splits the non-cardholders into two groups: those with and without cards.
+2. **Matching Process**: For each cardholder, the function calculates the Jaccard similarity between their activity pattern and those of eligible non-cardholders. It then selects the top N similar non-cardholders and randomly assigns one match per cardholder.
+3. **Match Selection**: The function selects a non-cardholder match for each cardholder based on the Jaccard similarity scores. It ensures that each non-cardholder is matched only once and that the top N similar non-cardholders are considered for matching.
+   1. The selection among the top N similar non-cardholders is done randomly to avoid bias. This process is defined in the `select_non_cardholders` function.
+   2. The function also checks for the eligibility as defined above.
+   3. If no eligible non-cardholders are found, the function prints a warning message.
+4. **Output**: The function returns a list of tuples containing the matched cardholder and non-cardholder client IDs along with their similarity scores.
+
+```{python}
+def select_non_cardholders(distances, eligible_non_cardholders, matches, matched_applicants, cardholder, without_card_activity, top_n):
+    """
+    Randomly select a non-cardholder match for a cardholder from the top N eligible candidates.
+
+    Parameters:
+    - distances (np.array): An array of Jaccard distances between a cardholder and non-cardholders.
+    - eligible_non_cardholders (list): A list of indices for non-cardholders who are eligible for matching.
+    - matches (list): A list to which the match will be appended.
+    - matched_applicants (set): A set of indices for non-cardholders who have already been matched.
+    - cardholder (pd.Series): The data series of the current cardholder.
+    - without_card_activity (pd.DataFrame): A DataFrame of non-cardholders without card issuance.
+    - top_n (int): The number of top similar non-cardholders to consider for matching.
+
+    Returns:
+    - None: The matches list is updated in place with the selected match.
+    """
+    eligible_distances = distances[eligible_non_cardholders]
+    sorted_indices = np.argsort(eligible_distances)[:top_n]
+
+    if sorted_indices.size > 0:
+        selected_index = np.random.choice(sorted_indices)
+        actual_selected_index = eligible_non_cardholders[selected_index]
+
+        if actual_selected_index not in matched_applicants:
+            matched_applicants.add(actual_selected_index)
+            applicant = without_card_activity.iloc[actual_selected_index]
+            similarity = 1 - eligible_distances[selected_index]
+            
+            matches.append((cardholder['client_id'], applicant['client_id'], similarity))
 
 def match_cardholders_with_non_cardholders(non_transactional, transactions, top_n=5):
     """
@@ -1157,37 +1248,15 @@ def match_cardholders_with_non_cardholders(non_transactional, transactions, top_
             print(f"No eligible non-cardholders found for cardholder client_id {cardholder['client_id']}.")
             
     return matches
+```
 
-def select_non_cardholders(distances, eligible_non_cardholders, matches, matched_applicants, cardholder, without_card_activity, top_n):
-    """
-    Randomly select a non-cardholder match for a cardholder from the top N eligible candidates.
+TODO: Visualise the matching process
 
-    Parameters:
-    - distances (np.array): An array of Jaccard distances between a cardholder and non-cardholders.
-    - eligible_non_cardholders (list): A list of indices for non-cardholders who are eligible for matching.
-    - matches (list): A list to which the match will be appended.
-    - matched_applicants (set): A set of indices for non-cardholders who have already been matched.
-    - cardholder (pd.Series): The data series of the current cardholder.
-    - without_card_activity (pd.DataFrame): A DataFrame of non-cardholders without card issuance.
-    - top_n (int): The number of top similar non-cardholders to consider for matching.
+The matching process is executed, and the results are stored in the `matched_non_card_holders_df` DataFrame. The percentage of clients with a card issued before and after matching is calculated to assess the impact of the matching process. We expect the percentage of clients with a card issued to increase by 100% after matching, as each non-cardholder should be matched with a cardholder.
 
-    Returns:
-    - None: The matches list is updated in place with the selected match.
-    """
-    eligible_distances = distances[eligible_non_cardholders]
-    sorted_indices = np.argsort(eligible_distances)[:top_n]
+Last but not least we set the artificial card issue date for each non-cardholder based on the matching results.
 
-    if sorted_indices.size > 0:
-        selected_index = np.random.choice(sorted_indices)
-        actual_selected_index = eligible_non_cardholders[selected_index]
-
-        if actual_selected_index not in matched_applicants:
-            matched_applicants.add(actual_selected_index)
-            applicant = without_card_activity.iloc[actual_selected_index]
-            similarity = 1 - eligible_distances[selected_index]
-            
-            matches.append((cardholder['client_id'], applicant['client_id'], similarity))
-
+```{python}
 def set_artificial_issue_dates(non_transactional_df, matches):
     """
     Augment the non-transactional DataFrame with artificial card issue dates based on matching results.
@@ -1228,66 +1297,9 @@ data_reduction["Non-cardholders without match"] = -(before_len - len(matched_non
 del before_len
 ```
 
-## Aggregate Transactions on a Monthly Basis
+## Aggregate on a Monthly Basis
 
-Validating first transactions where the amount equals the balance is essential for the integrity of our aggregated data analysis. This specific assertion underpins the reliability of our subsequent aggregation operations by ensuring each account's financial history starts from a verifiable point.
-
-```{python}
-zero_amount_transactions_df = transactions_df[transactions_df['amount'] == 0]
-
-zero_amount_transactions_info = {
-    'total_zero_amount_transactions': len(zero_amount_transactions_df),
-    'unique_accounts_with_zero_amount': zero_amount_transactions_df['account_id'].nunique(),
-    'transaction_type_distribution': zero_amount_transactions_df['transaction_type'].value_counts(normalize=True),
-    'operation_distribution': zero_amount_transactions_df['operation'].value_counts(normalize=True),
-    'k_symbol_distribution': zero_amount_transactions_df['k_symbol'].value_counts(normalize=True)
-}
-
-zero_amount_transactions_info, len(zero_amount_transactions_info)
-```
-
-```{python}
-accounts_with_zero_amount_transactions = accounts_df[accounts_df['account_id'].isin(zero_amount_transactions_df['account_id'].unique())]
-accounts_with_zero_amount_transactions
-```
-
-```{python}
-del accounts_with_zero_amount_transactions 
-del zero_amount_transactions_df
-del zero_amount_transactions_info
-```
-
-```{python}
-def validate_first_transactions(transactions):
-    """
-    Validates that for each account in the transactions DataFrame, there is at least
-    one transaction where the amount equals the balance on the account's first transaction date.
-
-    Parameters:
-    - transactions (pd.DataFrame): DataFrame containing transaction data with columns
-      'account_id', 'date', 'amount', and 'balance'.
-
-    Raises:
-    - AssertionError: If not every account has a first transaction where the amount equals the balance.
-    """
-
-    first_dates = transactions.groupby('account_id')['date'].min().reset_index(name='first_date')
-
-    first_trans = pd.merge(transactions, first_dates, how='left', on=['account_id'])
-
-    first_trans_filtered = first_trans[(first_trans['date'] == first_trans['first_date']) & (first_trans['amount'] == first_trans['balance'])]
-
-    first_trans_filtered = first_trans_filtered.drop_duplicates(subset=['account_id'])
-
-    unique_accounts = transactions['account_id'].nunique()
-    assert unique_accounts == first_trans_filtered['account_id'].nunique(), "Not every account has a first transaction where the amount equals the balance."
-
-    return "Validation successful: Each account has a first transaction where the amount equals the balance."
-
-validate_first_transactions(transactions_df)
-```
-
-We can confirm the truth of the assertions made. It is certain that there is a transaction with an amount equal to the balance in the transaction history of any account on the first date.
+After matching cardholders with non-cardholders and setting artificial card issue dates, we aggregate the transactional data on a monthly basis. This aggregation provides a comprehensive overview of financial activities for each account, facilitating further model development providing us with a fixed of features to work with.
 
 The function `aggregate_transactions_monthly` is designed to process and summarize financial transactions on a monthly basis for each account within a dataset. The explanation of its workings, step by step, is as follows:
 
@@ -1306,21 +1318,17 @@ The function `aggregate_transactions_monthly` is designed to process and summari
 
 4.  **Cumulative Balance Calculation**: After aggregating the monthly data, the function computes a cumulative balance (`balance`) for each account by cumulatively summing the `volume` (total transaction amount) over time. This step provides insight into how the account balance evolves over the months.
 
-5.  **Validation of Aggregated Data**: The `validate_monthly_aggregated_transactions` function is invoked to ensure the integrity and correctness of the aggregated data through several assertions:
-
-    -   The balance should consistently increase or decrease based on whether the total monthly transaction volume is positive or negative, respectively.
-    -   For each account, the balance in the first month should equal the total transaction volume of that month.
-    -   The sum of positive and negative transaction counts must equal the total transaction count for each month.
-    -   The number of unique accounts in the aggregated data should match that in the original dataset.
-    -   The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset.
+As we have already explored and verified in the EDA section of the transactional data, each account starts with a transaction where the amount equals the inital balance. This validation ensures the integrity of the aggregated data, as the balance should accurately reflect the total transaction volume over time.
 
 ```{python}
-def aggregate_transactions_monthly(df):
+def aggregate_transactions_monthly(df, validate=True):
     """
     Aggregate financial transaction data on a monthly basis per account.
 
     Parameters:
     - df (pd.DataFrame): DataFrame containing financial transaction data with 'account_id', 'date', and other relevant columns.
+
+    - validate (bool): If True, validate the aggregated data. Default is True.
 
     Returns:
     - pd.DataFrame: Monthly aggregated financial transaction data per account.
@@ -1350,11 +1358,23 @@ def aggregate_transactions_monthly(df):
         )
 
     monthly_aggregated_data["balance"] = monthly_aggregated_data.groupby("account_id")["volume"].cumsum()
-
-    validate_monthly_aggregated_transactions(monthly_aggregated_data, df)
-
+    if validate:
+        validate_monthly_aggregated_transactions(monthly_aggregated_data, df)
     return monthly_aggregated_data
 
+agg_transactions_monthly_df = aggregate_transactions_monthly(transactions_df)
+agg_transactions_monthly_df.to_csv("./data/agg_transactions_monthly.csv", index=False)
+agg_transactions_monthly_df.describe()
+```
+
+The `validate_monthly_aggregated_transactions` function is invoked to ensure the integrity and correctness of the aggregated data through several assertions:
+-   The balance should consistently increase or decrease based on whether the total monthly transaction volume is positive or negative, respectively.
+-   For each account, the balance in the first month should equal the total transaction volume of that month.
+-   The sum of positive and negative transaction counts must equal the total transaction count for each month.
+-   The number of unique accounts in the aggregated data should match that in the original dataset.
+-   The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset.
+
+```{python}
 def validate_monthly_aggregated_transactions(aggregated_data, original_df):
     """
     Validate the integrity and correctness of aggregated monthly financial transactions.
@@ -1406,19 +1426,18 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
         )
         .any()
     ), "Some accounts' final balances do not match their last transactions."
-    
 
-agg_transactions_monthly_df = aggregate_transactions_monthly(transactions_df)
 validate_monthly_aggregated_transactions(agg_transactions_monthly_df, transactions_df)
-agg_transactions_monthly_df.describe()
 ```
 
-### Monthly Balance Difference and Volume
+
+# Exploratory Data Analysis: Aggregated Monthly Transactions
+## Monthly Balance Difference and Volume
 
 This plot gives a clear picture of how money moves in and out of an account each month and how these movements affect the overall balance. It does this by showing two things:
 
--   **Balance Difference**: This line shows whether the account balance went up or down each month. If the line goes up, it means the account gained money that month. If it goes down, the account lost money.
--   **Volume**: This line shows the total amount of money that moved in the account each month, regardless of whether it was coming in or going out.
+- **Balance Difference**: This line shows whether the account balance went up or down each month. If the line goes up, it means the account gained money that month. If it goes down, the account lost money.
+- **Volume**: This line shows the total amount of money that moved in the account each month, regardless of whether it was coming in or going out.
 
 **What to Look For**: - A direct link between the amount of money moved (volume) and changes in the account balance. High incoming money should lead to an uptick in the balance, and lots of outgoing money should lead to a downturn. - This visual check helps to understand how active the account is and whether it’s generally getting fuller or emptier over time.
 
@@ -1444,8 +1463,7 @@ def plot_monthly_balance_diff_and_volume(transactions_monthly, account_id, figsi
 plot_monthly_balance_diff_and_volume(agg_transactions_monthly_df, 2)
 ```
 
-### Monthly Transactions, Balance, and Volume Plot Explanation
-
+## Monthly Transactions, Balance, and Volume Plot Explanation
 This visualization offers a snapshot of an account’s activity over time by comparing money movement each month with the overall account balance. It helps to understand:
 
 -   **Volume**: How much money came in or went out of the account each month. Incoming money is shown as up, and outgoing money as down.
@@ -1474,9 +1492,7 @@ def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, accou
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 2)
 ```
 
-### Delieverable: Closer Look at account 14 and 18
-
-#### Account 14
+## Delieverable: Closer Look at Account 14
 
 ```{python}
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 14)
@@ -1484,7 +1500,7 @@ plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 14)
 
 Account 14 shows a rather conservative transaction history. The spending habits are all withing range of 10k to -10k per month. We can see little volatility, the account shows a slight trend of growing.
 
-#### Account 18
+## Delieverable: Closer Look at Account 18
 
 ```{python}
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 18)
@@ -1494,15 +1510,13 @@ Account 18 paints a different picture in comparison to account 14.
 
 The volatility here is a lot higher, indiciating a potential for a business account or high income household. Especially March 1994 to December 1994 show some volatile transaction habits.
 
-##### Analysis
 
 Looking at the balance and volume per month for the accounts 14 and 18 we can notice some interesting patterns.
 
-###### Account 14:
+TODO: Add analysis
 
-## Rolling Window Aggregations for Card Holders
-
-We condense transaction data into a monthly aggregated format. This aggregation serves a multifaceted purpose:
+# Pivot Transactions: Rolling Up to Monthly Aggregates
+We have condensed transaction data into a monthly aggregated format. This aggregation serves a multifaceted purpose:
 
 -   Monthly aggregation standardizes the time frame across which we analyze transactions, allowing us to compare transactional behaviors consistently across all accounts.
 -   Aggregating data on a monthly level illuminates patterns that daily data might obscure. It enables us to discern trends over a broader time scale, capturing cyclical behaviors, seasonal effects, and response to macroeconomic events.
@@ -1520,7 +1534,7 @@ def pivot_transactions(non_transactional, transactions_monthly, months_before_ca
     on a specified range of months before card issuance and aggregates various transaction metrics.
 
     Parameters:
-    - non_transactional (pd.DataFrame): A DataFrame containing non-transactional account data.
+    - non_transactional (pd.DataFrame): A DataFrame containing non-transactional account data. This is only used to map card issuance dates to transactions.
     - transactions_monthly (pd.DataFrame): A DataFrame containing monthly transaction data.
     - months_before_card_range (tuple): A tuple specifying the inclusive range of months before card 
                                         issuance to filter the transactions for aggregation.
@@ -1573,29 +1587,20 @@ transactions_pivoted_df = pivot_transactions(matched_non_card_holders_w_issue_da
 transactions_pivoted_df.describe()
 ```
 
-```{python}
-matched_non_card_holders_w_issue_date_df
-```
-
-```{python}
-agg_transactions_monthly_df.to_csv("./data/transactions_monthly.csv")
-```
-
 # Merge everything together
 
 ```{python}
 golden_record_df = matched_non_card_holders_w_issue_date_df.merge(transactions_pivoted_df, on='account_id', how='left')
+golden_record_df.to_csv("data/golden_record.csv", index=False)
+data_reduction["Final Golden Record"] = len(golden_record_df)
+
 assert golden_record_df['client_id'].is_unique, "Each client_id should appear exactly once in the final DataFrame."
 assert golden_record_df['account_id'].is_unique, "Each account_id should appear exactly once in the final DataFrame."
+
+golden_record_df.head()
 ```
 
-```{python}
-golden_record_df.to_csv("data/golden_record.csv", index=False)
-```
-
-```{python}
-golden_record_df.describe()
-```
+Looking at the first few rows of the final golden record, we can see the aggregated transactional data for each account, with columns representing various metrics for each month leading up to the card issuance date.
 
 ```{python}
 plt.figure(figsize=(10, 6))
@@ -1606,27 +1611,22 @@ plt.ylabel('Count')
 plt.show()
 ```
 
+We can see that the number of clients with a card issued is equal to the number of clients without a card issued, indicating a successful matching process.
+
 ```{python}
 plt.figure(figsize=(10, 6))
 plt.title('Distribution of Card Issuance Dates')
-sns.histplot(golden_record_df, x='card_issued', hue='has_card', kde=True, bins=30)
+sns.histplot(golden_record_df, x='card_issued', hue='has_card', kde=True, bins=30, alpha=0.5)
 plt.xlabel('Card Issuance Date')
 plt.ylabel('Count')
 plt.show()
 ```
 
-```{python}
-data_reduction
-```
+The distribution of card issuance dates shows that the card issuance process was spread out over time, with an expected identical distribution for clients with and without cards issued.
 
-```{python}
-golden_record_df.head()
-```
+# Data Reduction Summary
 
-```{python}
-data_reduction["Final Golden Record"] = len(golden_record_df)
-data_reduction
-```
+The following waterfall chart visualizes the data reduction process, highlighting the number of records retained or lost at each stage.
 
 ```{python}
 import plotly.graph_objects as go
@@ -1646,6 +1646,7 @@ fig = go.Figure(go.Waterfall(
     increasing={"marker":{"color":"skyblue"}},
     totals={"marker":{"color":"skyblue"}},
 ))
+
 fig.update_layout(
     title="Enhanced Data Reduction Waterfall Chart",
     xaxis=dict(title="Category"),
@@ -1655,7 +1656,7 @@ fig.update_layout(
 fig.show()
 ```
 
-# Comparing Cardholders and Non-Cardholders
+# Exploratory Data Analysis: Comparing Cardholders and Non-Cardholders
 
 ## Trends in Monthly Financial Metrics
 
@@ -1675,17 +1676,14 @@ def plot_trends_with_medians(cardholders, non_cardholders, columns, title, media
     - title (str): Title for the plot.
     - median_ranges (list of tuples): Each tuple contains start and end indices for calculating medians.
     """
-    # Calculate averages
     cardholder_avgs = cardholders[columns].mean()
     non_cardholder_avgs = non_cardholders[columns].mean()
 
-    # Setup plot
     months = list(range(1, 1 + len(columns)))
     plt.figure(figsize=(14, 7))
     plt.plot(months, cardholder_avgs.values, marker='o', linestyle='-', color='blue', label='Cardholders')
     plt.plot(months, non_cardholder_avgs.values, marker='o', linestyle='-', color='orange', label='Non-Cardholders')
 
-    # Adding median line segments based on specified ranges
     for start, end in median_ranges:
         median_cardholder = cardholders[columns[start:end+1]].median().median()
         median_non_cardholder = non_cardholders[columns[start:end+1]].median().median()
@@ -1704,7 +1702,6 @@ def plot_trends_with_medians(cardholders, non_cardholders, columns, title, media
 ### Monthly Balance Trends
 
 ```{python}
-# Example usage with the correct labels
 median_ranges = [(0, 2), (9, 11)]  # First 3 months and last 3 months for a 12-month period
 balance_columns = [f'M_{i}_balance' for i in range(2, 14)]
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, balance_columns, 'Monthly Balance Trends', median_ranges)
@@ -1738,6 +1735,8 @@ negative_transaction_count_columns = [f'M_{i}_negative_transaction_count' for i 
 plot_trends_with_medians(golden_cardholders, golden_non_cardholders, negative_transaction_count_columns, 'Monthly Negative Transaction Count Trends', median_ranges)
 ```
 
+
+## Comparison of Average Feature Values
 ```{python}
 def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
     """
@@ -1772,16 +1771,6 @@ plot_grouped_comparison(golden_cardholders, golden_non_cardholders, [col for col
 plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amount"])
 ```
 
-```{python}
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-def filter_columns_by_keyword(df, keyword):
-    """ Return columns that contain a specific keyword """
-    return [col for col in df.columns if keyword in col]
-```
-
 # Data Partitioning
 
 The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
@@ -1804,6 +1793,17 @@ As we can see the distribution of the target variable is maintained in both sets
 
 # Model Construction
 
+## Pipeline for Training and Evaluation
+
+The `train_evaluate_model` function is designed to streamline the process of training and evaluating machine learning models. It performs the following steps:
+
+1. **Preprocessing**: The function automatically handles numerical and categorical features, imputing missing values, scaling numerical features, and one-hot encoding categorical features.
+2. **Model Training**: The specified model is trained on the training data.
+3. **Cross-Validation**: The model is evaluated using cross-validation with specified evaluation metrics.
+4. **Model Evaluation**: The model is evaluated on the test set using various metrics, including accuracy, F1 score, AUC-ROC, precision, and recall.
+
+The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
+   
 ```{python}
 import numpy as np
 from sklearn.model_selection import cross_validate
@@ -1868,7 +1868,7 @@ def train_evaluate_model(
 
     scoring = {
         "accuracy": "accuracy",
-        "f1": make_scorer(f1_score),
+        "f1_macro": make_scorer(f1_score),
         "roc_auc": "roc_auc",
         "precision": make_scorer(precision_score),
         "recall": make_scorer(recall_score),
@@ -1887,7 +1887,7 @@ def train_evaluate_model(
 
     test_metrics = {
         "accuracy": pipeline.score(X_test, y_test),
-        "f1": f1_score(y_test, pipeline.predict(X_test)),
+        "f1_macro": f1_score(y_test, pipeline.predict(X_test), average="macro"),
         "roc_auc": roc_auc_score(y_test, y_pred_proba[:, 1]) if hasattr(pipeline, "predict_proba") else np.nan,
         "precision": precision_score(y_test, pipeline.predict(X_test)),
         "recall": recall_score(y_test, pipeline.predict(X_test))
@@ -1899,23 +1899,20 @@ def train_evaluate_model(
     }, y_test, y_pred_proba
 ```
 
+## Evaluation Metrics Visualization
+
+The `visualize_results` function is designed to visualize the results of the model evaluation. It displays the following plots:
+
+1. **Validation Metrics with Error Bars**: A bar plot showing the mean validation metrics with error bars representing the standard deviation.
+2. **Test Metrics**: A bar plot showing the test metrics.
+3. **Confusion Matrix**: A confusion matrix showing the true positive, false positive, true negative, and false negative counts.
+4. **ROC Curve**: A Receiver Operating Characteristic (ROC) curve showing the true positive rate against the false positive rate.
+5. **Precision-Recall Curve**: A precision-recall curve showing the precision against the recall.
+6. **Lift Curve**: A lift curve showing the ratio of the response rate to the random model response rate.
+7. **Cumulative Gain Curve**: A cumulative gain curve showing the ratio of the cumulative number of positive responses to the random model cumulative number of positive responses.
+
 ```{python}
-from sklearn.linear_model import LogisticRegression
-
-model = LogisticRegression(random_state=42, max_iter=1000)
-feature_columns = [
-    'age',
-    'client_region'
-] + [col for col in golden_record_df.columns if 'M_' in col and ('_balance' in col or '_volume' in col)]
-
-train_evaluate_model(train_df, test_df, feature_columns, model)
-```
-
-```{python}
-import matplotlib.pyplot as plt
-import seaborn as sns
 import scikitplot as skplt
-import numpy as np
 
 def visualize_results(metrics_report, model_name, y_true, y_pred_proba, cv=10):
     """
@@ -1935,8 +1932,6 @@ def visualize_results(metrics_report, model_name, y_true, y_pred_proba, cv=10):
     test_metrics = metrics_report['test']
     
     metrics = train_metrics.keys()
-
-    # Plot validation metrics with error bars
     val_means = [train_metrics[metric]['mean'] for metric in metrics]
     val_stds = [train_metrics[metric]['std'] for metric in metrics]
 
@@ -1951,7 +1946,6 @@ def visualize_results(metrics_report, model_name, y_true, y_pred_proba, cv=10):
     plt.grid(True)
     plt.show()
     
-    # Plot test metrics
     test_values = list(test_metrics.values())
     test_names = list(test_metrics.keys())
     
@@ -1969,28 +1963,55 @@ def visualize_results(metrics_report, model_name, y_true, y_pred_proba, cv=10):
     plt.grid(True)
     plt.show()
 
-    # Check if the model has predicted probabilities
+    preds = y_pred_proba.argmax(axis=1)
+
+    # Plot Confusion Matrix
+    skplt.metrics.plot_confusion_matrix(y_true, preds, figsize=(10, 6))
+    plt.title(f'{model_name}: Confusion Matrix ')
+    plt.show()
+
     if not np.isnan(y_pred_proba).all():
         # Plot AUROC curve
         skplt.metrics.plot_roc(y_true, y_pred_proba, figsize=(10, 6))
-        plt.title(f'{model_name}: ROC Curve')
+        plt.title(f'{model_name}: ROC Curve on Test Set')
         plt.show()
 
         # Plot precision-recall curve
         skplt.metrics.plot_precision_recall(y_true, y_pred_proba, figsize=(10, 6))
-        plt.title(f'{model_name}: Precision-Recall Curve')
+        plt.title(f'{model_name}: Precision-Recall Curve on Test Set')
         plt.show()
 
-# Assuming train_evaluate_model and other necessary variables are defined
-metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, model)
-visualize_results(metrics_report, "Logistic Regression", y_test, y_pred_proba)
+        # Plot lift curve
+        skplt.metrics.plot_lift_curve(y_true, y_pred_proba, figsize=(10, 6))
+        plt.title(f'{model_name}: Lift Curve on Test Set')
+        plt.show()
+
+        # Plot cumulative gain curve
+        skplt.metrics.plot_cumulative_gain(y_true, y_pred_proba, figsize=(10, 6))
+        plt.title(f'{model_name}: Cumulative Gain Curve on Test Set')
+        plt.show()
 ```
 
-## BAV 
+## Baseline Model: Logistic Regression
 
-# Model Engineering
+We start with a simple logistic regression model as a baseline. This model is easy to interpret and can provide a good starting point for more complex models.
 
-# Model Comparison & Selection
+```{python}
+from sklearn.linear_model import LogisticRegression
+
+baseline_model = LogisticRegression(random_state=42, max_iter=1000)
+
+feature_columns = [ # Reducing the number of features for the baseline model as per task requirements
+    'age',
+    'client_region'
+] + [col for col in golden_record_df.columns if 'M_' in col and ('_balance' in col or '_volume' in col)]
+
+baseline_metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, baseline_model)
+visualize_results(metrics_report, "Baseline: Logistic Regression", y_test, y_pred_proba)
+```
+
+
+## Random Forest and Decision Tree Models
 
 ```{python}
 from sklearn.ensemble import RandomForestClassifier
@@ -2003,55 +2024,15 @@ visualize_results(metrics_report, "Random Forest", y_test, y_pred_proba)
 ```{python}
 from sklearn.tree import DecisionTreeClassifier
 
-
 decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
 metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model)
 visualize_results(metrics_report, "Decision Tree", y_test, y_pred_proba)
 ```
 
-------------------------------------------------------------------------
+# Model Comparison & Selection
 
-# WORKBENCH - remove later
+# Model Optimization
 
-### Some older input
+# Model Explanation
 
-We need some categorical indicator wheter a transactions is a transactions incoming or outgoing from the perspective of the account holder. This will be important for the feature engineering later on. We will create a column called `transaction_direction` using the amount to engineer this feature.
-
-Balance is the wealth on the account after the transaction.
-
-k_symbol is the purpose of the transaction. This is often use in the context of budgeting in E-Banking applications or just personal finance management. A lot of NA values are present in this column. We will have to deal with this later on and weigh the importance of this column.
-
-Track the time series of a given account to get a better understanding of the datasets nature.
-
-It seems that there can be multiple transactions on the same day. We will have to aggregate the transactions on the same day to get a better understanding of the transactions as the timestamp resolution is not high enough to track the transactions on a daily basis.
-
-We need some handling for this as the ID is not informative as well (Dani).
-
-For the feature enginnering a per month evaluation of the transactions is sufficient (Dani).
-
-We need to make sure across the board that for the prediction we only use the data that is available at the time of the prediction. This means that we can only use the data from the past to predict the future. This is important to keep in mind when we engineer the features as some entities do not have any information about the date and therefore we cannot use them for the prediction as we cannot rule out that they are not from the future.
-
-Frequency analysis of the transactions could be interesting as the hypothesis might be that the more frequent the transactions the more likely the account holder is to be interested in a credit card. Fourier transformation could be used to get a better understanding of the frequency of the transactions.
-
-### JITT 05.03.24
-
--   New customers are handled differently
--   Customer without the required history should be ignored otherwise they are treated as irrelevant
--   Lag is ignored like (12 + 1) months
--   Age should be in relation to the time of the event (card issued / reference date for refrence clients)
--   How old are customers with a Junior Card? This should be evaluated based on the data
-    -   Example with Junior Card model with Age as most important feature as a negative example
--   Reference clients
-    -   They should not be as similar as possible (Twin brother problem)
-    -   Same external market conditions
-    -   Same environment
-    -   See slide 6
--   Owner and disponents cannot be distinguished directly and assumptions are required
-    -   MasterCards vs Visa war: as much cards as possible for both client of an account
-    -   AGain the Twin brother problem as features are too similar possibly
-
-#### General notes to self
-
--   Visualise monthly product puchases
--   Viz environment of selected client and reference clients and answer the questions are they from a comparable environment
-
+# Conclusion
