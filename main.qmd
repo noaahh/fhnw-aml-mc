@@ -2316,6 +2316,14 @@ plot_grouped_comparison(
 plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amount"])
 ```
 
+## Remove Card related features
+
+```{python}
+# remove all column that have card in them except for has_card
+golden_record_df = golden_record_df.loc[:, ~golden_record_df.columns.str.contains("card") | golden_record_df.columns.str.contains("has_card")]
+golden_record_df.isna().sum()
+```
+
 # Data Partitioning
 
 The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
@@ -2323,17 +2331,34 @@ The data is split in a 80/20 ratio for training and testing purposes. The strati
 ```{python}
 from sklearn.model_selection import train_test_split
 
-train_df, test_df = train_test_split(
-    golden_record_df,
-    test_size=0.2,
-    random_state=1337,
-    stratify=golden_record_df["has_card"],
-    shuffle=True,
-)
+def create_train_test_sets(df, target_col="has_card", test_size=0.2):
+    """
+    Create train and test sets for machine learning model training.
 
-print(f"Train set size: {len(train_df)}, Test set size: {len(test_df)}")
-print(f"Train set distribution:\n{train_df['has_card'].value_counts(normalize=True)}")
-print(f"Test set distribution:\n{test_df['has_card'].value_counts(normalize=True)}")
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing the data.
+    - target_col (str): The name of the target column.
+    - test_size (float): The proportion of the data to include in the test set.
+
+    Returns:
+    - pd.DataFrame, pd.DataFrame: The train and test DataFrames.
+    """
+    X = df.drop(columns=[target_col])
+    y = df[target_col]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=1337, stratify=y, shuffle=True
+    )
+
+    return X_train, X_test, y_train, y_test
+
+X_train, X_test, y_train, y_test = create_train_test_sets(golden_record_df)
+
+print(f"Train set size: {len(X_train)}")
+print(f"Test set size: {len(X_test)}")
+
+print(f"Train set distribution:\n{y_train.value_counts(normalize=True)}")
+print(f"Test set distribution:\n{y_test.value_counts(normalize=True)}")
 ```
 
 As we can see the distribution of the target variable is maintained in both sets after the split.
@@ -2357,7 +2382,8 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_selection import RFECV
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import KFold
+
 
 def create_pipeline_steps(model, feature_columns, train_data_df, cv_k, include_rfecv=False):
     """
@@ -2403,7 +2429,7 @@ def create_pipeline_steps(model, feature_columns, train_data_df, cv_k, include_r
     steps = [("preprocessor", preprocessor)]
 
     if include_rfecv:
-        rfecv = RFECV(estimator=model, step=1, cv=StratifiedKFold(cv_k), scoring='accuracy', n_jobs=-1, verbose=1)
+        rfecv = RFECV(estimator=model, step=1, cv=KFold(cv_k), scoring='accuracy', n_jobs=-1, verbose=1)
         steps.append(("rfecv", rfecv))
 
     steps.append(("model", model))
@@ -2423,8 +2449,10 @@ from sklearn.metrics import recall_score
 
 def train_evaluate_model(
     estimator,
-    train_df,
-    test_df,
+    X_train,
+    y_train,
+    X_test,
+    y_test,
     feature_columns,
     include_rfecv=False,
     cv=5,
@@ -2444,8 +2472,6 @@ def train_evaluate_model(
     - y_test: True labels for the test set.
     - y_pred_proba: Predicted probabilities for the test set.
     """
-    target_column = "has_card"
-
     scoring = {
         "accuracy": "accuracy",
         "f1_macro": make_scorer(f1_score),
@@ -2454,10 +2480,7 @@ def train_evaluate_model(
         "recall": make_scorer(recall_score),
     }
 
-    X_train, y_train = train_df[feature_columns], train_df[target_column]
-    X_test, y_test = test_df[feature_columns], test_df[target_column]
-
-    pipeline_steps = create_pipeline_steps(estimator, feature_columns, train_df, cv, include_rfecv)
+    pipeline_steps = create_pipeline_steps(estimator, feature_columns, X_train, cv, include_rfecv)
     pipeline = Pipeline(pipeline_steps)
 
     train_metrics_summary = cross_validate(
@@ -2509,8 +2532,7 @@ The `visualize_results` function is designed to visualize the results of the mod
 ```{python}
 import scikitplot as skplt
 
-
-def visualize_results(metrics_report, model_name, cv=10):
+def visualize_results(metrics_report, model_name, cv=5):
     """
     Visualizes the results from the given metrics report dictionary.
 
@@ -2605,7 +2627,7 @@ from sklearn.linear_model import LogisticRegression
 baseline_model = LogisticRegression(random_state=42, max_iter=100000)
 
 baseline_metrics_report = train_evaluate_model(
-    baseline_model, train_df, test_df, feature_columns
+    baseline_model, X_train, y_train, X_test, y_test, feature_columns, include_rfecv=False
 )
 visualize_results(
     baseline_metrics_report, "Baseline Logistic Regression"
@@ -2617,10 +2639,10 @@ from sklearn.linear_model import LogisticRegression
 
 baseline_model = LogisticRegression(random_state=42, max_iter=100000)
 
-feature_columns = train_df.columns.drop("has_card").tolist()
+feature_columns = X_train.columns
 
 baseline_metrics_report = train_evaluate_model(
-    baseline_model, train_df, test_df, feature_columns, include_rfecv=True
+    baseline_model, X_train, y_train, X_test, y_test, feature_columns, include_rfecv=True
 )
 
 visualize_results(
@@ -2629,10 +2651,19 @@ visualize_results(
 ```
 
 ```{python}
-selected_features = baseline_metrics_report["pipeline"]["rfecv"].support_
-print(f"Number of selected features: {selected_features.sum()}")
+np.array(baseline_metrics_report["pipeline"].named_steps["preprocessor"].get_feature_names_out())
+```
 
-baseline_metrics_report["pipeline"]["rfecv"].ranking_
+```{python}
+baseline_metrics_report["pipeline"].named_steps["rfecv"].support_
+```
+
+```{python}
+available_features = np.array(baseline_metrics_report["pipeline"].named_steps["preprocessor"].get_feature_names_out())
+selected_features = available_features[baseline_metrics_report["pipeline"].named_steps["rfecv"].support_]
+
+for feature in selected_features:
+    print(feature)
 ```
 
 ## Candidate Models: Random Forest and Gradient Boosting
@@ -2642,7 +2673,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
 random_forest_model = RandomForestClassifier(n_estimators=100, random_state=42)
 rf_metrics_report, y_test, y_pred_proba = train_evaluate_model(
-    train_df, test_df, feature_columns, random_forest_model
+    X_train, y_train, X_test, y_test, feature_columns, random_forest_model
 )
 ```
 
@@ -2651,7 +2682,7 @@ gradient_boost_model = GradientBoostingClassifier(
     n_estimators=100, learning_rate=0.1, random_state=42
 )
 gb_metrics_report, y_test, y_pred_proba = train_evaluate_model(
-    train_df, test_df, feature_columns, gradient_boost_model
+    X_train, y_train, X_test, y_test, feature_columns, gradient_boost_model
 )
 ```
 
