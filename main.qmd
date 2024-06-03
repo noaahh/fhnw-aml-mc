@@ -13,6 +13,7 @@ jupyter: python3
 ---
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:43.802780Z', start_time: '2024-06-03T12:46:43.795295Z'}
 import pandas as pd
 from datetime import datetime
 from collections import OrderedDict
@@ -33,6 +34,7 @@ data_reduction = OrderedDict()
 ## Helper Functions
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:48.728626Z', start_time: '2024-06-03T12:46:48.724488Z'}
 def remap_values(df, column, mapping):
     # assert that all values in the column are in the mapping except for NaN
     assert df[column].dropna().isin(mapping.keys()).all()
@@ -57,6 +59,7 @@ def read_csv(file_path, sep=";", dtypes=None):
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:48.870282Z', start_time: '2024-06-03T12:46:48.840483Z'}
 def plot_categorical_variables(df, categorical_columns, fill_na_value='NA'):
     """
     Plots count plots for categorical variables in a DataFrame, filling NA values with a specified string.
@@ -156,6 +159,7 @@ def add_percentage_labels(ax, hue_order):
 ### Accounts
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:49.066309Z', start_time: '2024-06-03T12:46:49.040353Z'}
 accounts_df = read_csv("data/account.csv")
 
 # Translated frequency from Czech to English
@@ -176,25 +180,30 @@ accounts_df.info()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:49.173112Z', start_time: '2024-06-03T12:46:49.163463Z'}
 # todo add some basic eda here
 accounts_df.head()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:49.385944Z', start_time: '2024-06-03T12:46:49.381821Z'}
 accounts_df.nunique()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:49.954761Z', start_time: '2024-06-03T12:46:49.738723Z'}
 plot_categorical_variables(accounts_df, ['account_frequency'])
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:50.407893Z', start_time: '2024-06-03T12:46:50.083300Z'}
 plot_numerical_distributions(accounts_df, ['account_created'])
 ```
 
 ### Clients
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:50.918602Z', start_time: '2024-06-03T12:46:50.576931Z'}
 clients_df = read_csv("data/client.csv")
 
 def parse_birth_number(birth_number):
@@ -243,46 +252,55 @@ clients_df.info()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:50.965782Z', start_time: '2024-06-03T12:46:50.960895Z'}
 # todo add some basic eda here
 clients_df.head()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:51.234674Z', start_time: '2024-06-03T12:46:51.224454Z'}
 clients_df.describe()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:52.253928Z', start_time: '2024-06-03T12:46:51.664038Z'}
 plot_numerical_distributions(clients_df, ['birth_date', 'age'])
 ```
 
 ### Dispositions
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:52.265745Z', start_time: '2024-06-03T12:46:52.256747Z'}
 dispositions_df = read_csv("data/disp.csv")
 dispositions_df.info()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:52.378199Z', start_time: '2024-06-03T12:46:52.374087Z'}
 dispositions_df.head()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:52.455815Z', start_time: '2024-06-03T12:46:52.448537Z'}
 dispositions_df.describe()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:52.961120Z', start_time: '2024-06-03T12:46:52.852434Z'}
 plot_categorical_variables(dispositions_df, ['type'])
 ```
 
 As the goal of this model is to address accounts and not client directly we will focus on the clients which own an account and focus solely on them.
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:53.081161Z', start_time: '2024-06-03T12:46:53.076386Z'}
 dispositions_df = dispositions_df[dispositions_df['type'] == 'OWNER']
 ```
 
 ### Orders
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:53.562173Z', start_time: '2024-06-03T12:46:53.541316Z'}
 orders_df = read_csv("data/order.csv")
 
 # Translated from Czech to English
@@ -302,30 +320,36 @@ orders_df.info()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:53.963681Z', start_time: '2024-06-03T12:46:53.958749Z'}
 orders_df.head()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:54.207857Z', start_time: '2024-06-03T12:46:54.198627Z'}
 orders_df.describe()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:54.478325Z', start_time: '2024-06-03T12:46:54.471129Z'}
 orders_df.nunique()
 ```
 
 There appear to be as many order ids as there are rows.
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:55.518897Z', start_time: '2024-06-03T12:46:54.993168Z'}
 plot_categorical_variables(orders_df, ['k_symbol', 'bank_to'])
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:55.974512Z', start_time: '2024-06-03T12:46:55.541985Z'}
 plot_numerical_distributions(orders_df, ['debited_amount'])
 ```
 
 ### Transactions
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:58.609556Z', start_time: '2024-06-03T12:46:56.088509Z'}
 # column 8 is the 'bank' column which contains NaNs and must be read as string
 transactions_df = read_csv("data/trans.csv", dtypes={8: str})
 
@@ -366,18 +390,22 @@ transactions_df.info()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:58.648455Z', start_time: '2024-06-03T12:46:58.638047Z'}
 transactions_df.head()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:46:58.837522Z', start_time: '2024-06-03T12:46:58.649152Z'}
 transactions_df.describe()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:47:02.571271Z', start_time: '2024-06-03T12:46:58.844956Z'}
 plot_categorical_variables(transactions_df, ['transaction_type', 'operation', 'k_symbol'])
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:47:10.069811Z', start_time: '2024-06-03T12:47:02.572795Z'}
 plot_numerical_distributions(transactions_df, ['date', 'amount', 'balance'])
 ```
 
@@ -392,6 +420,7 @@ According to description of the field balance: "balance after transaction"
 #### Transaction Amounts and Counts by Month
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:47:12.128480Z', start_time: '2024-06-03T12:47:10.070947Z'}
 # Getting a list of unique years from the dataset
 transactions_df['year'] = transactions_df['date'].dt.year
 transactions_df['month'] = transactions_df['date'].dt.month
@@ -435,6 +464,7 @@ plt.show()
 ```
 
 ```{python}
+#| ExecuteTime: {end_time: '2024-06-03T12:47:15.722730Z', start_time: '2024-06-03T12:47:12.129671Z'}
 fig, axs = plt.subplots(2, len(years), figsize=(40 * len(years) / 2, 30), sharey='row', gridspec_kw={'height_ratios': [3, 1]})
 
 for i, year in enumerate(years):
@@ -1803,7 +1833,6 @@ The `train_evaluate_model` function is designed to streamline the process of tra
 The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T11:39:40.940419Z', start_time: '2024-06-03T11:39:40.932159Z'}
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -1971,7 +2000,6 @@ class Visualizer:
         skplt.metrics.plot_confusion_matrix(self.y_true, preds, ax=ax)
         ax.set_title(f'{self.model_name}: Confusion Matrix')
 
-
     def plot_classification_report(self, ax):
         preds = self.y_pred_proba.argmax(axis=1)
         report = classification_report(self.y_true, preds, output_dict=True)
@@ -1987,14 +2015,6 @@ class Visualizer:
 
         ax.axis('off')
         ax.set_title(f'{self.model_name}: Classification Report')
-        
-    def plot_feature_importances(self, ax):
-        feature_importances = self.trainer.get_trained_model().feature_importances_
-        feature_names = self.trainer.feature_columns
-        sns.barplot(x=feature_importances, y=feature_names, ax=ax)
-        ax.set_title(f'{self.model_name}: Feature Importances')
-        ax.set_xlabel('Importance')
-        ax.set_ylabel('Feature')
 
     def plot_threshold_optimization(self, ax):
         precision, recall, thresholds = precision_recall_curve(self.y_true, self.y_pred_proba[:, 1])
@@ -2024,6 +2044,18 @@ class Visualizer:
         skplt.metrics.plot_cumulative_gain(self.y_true, self.y_pred_proba, ax=ax)
         ax.set_title(f'{self.model_name}: Cumulative Gain Curve on Test Set')
 
+    def plot_partial_dependence(self, feature):
+        pdp = self.explainer.model_profile(type='partial', variables=feature)
+        pdp.plot()
+
+    def plot_accumulated_local_effects(self, feature):
+        ale = self.explainer.model_profile(type='accumulated', variables=feature)
+        ale.plot()
+
+    def plot_breakdown(self, observation):
+        breakdown = self.explainer.predict_parts(observation, type='break_down')
+        breakdown.plot()
+
     def plot_performance_metrics(self, axes):
         self.plot_validation_metrics(axes[0])
         self.plot_test_metrics(axes[1])
@@ -2046,13 +2078,6 @@ class Visualizer:
         model_profile.plot()
 
     def visualize_all(self):
-
-        # fig, axes = self.prepare_plot_layout(num_plots)
-        # self.plot_performance_metrics(axes[:2])
-        # self.plot_confusion_matrix(axes[2])
-        # self.plot_classification_report(axes[3])
-        # self.plot_discrimination_metrics(axes[4:6])
-
         if not np.isnan(self.y_pred_proba).all():
             fig, axes = self.prepare_plot_layout(8)
             self.plot_performance_metrics(axes[:2])
@@ -2070,15 +2095,27 @@ class Visualizer:
 
         self.plot_performance_metrics(axes[:2])
         self.plot_confusion_matrix(axes[2])
-
         self.plot_classification_report(axes[3])
 
         plt.show()
-        
-    def visualize_explanations(self):
+
+    def visualize_explanations(self, feature_columns = []):
         self.plot_model_explanations()
+
+        if not feature_columns:
+            feature_columns = self.trainer.feature_columns[0]
+            
+        # Partial Dependence Plot
+        self.plot_partial_dependence(feature_columns)  # Replace 'feature1' with the desired feature
+
+        # Accumulated Local Effects
+        self.plot_accumulated_local_effects(feature_columns)  # Replace 'feature2' with the desired feature
+
+        # Breakdown Plot
+        observation = self.trainer.test_df[self.trainer.feature_columns].iloc[0]  
+        self.plot_breakdown(observation)
+
         plt.show()
-    
 ```
 
 ```{python}
@@ -2093,6 +2130,7 @@ def train_evaluate_model(train_df, test_df, feature_columns, model, target_colum
 def visualize_results(trainer, model_name):
     visualizer = Visualizer(trainer, model_name)
     visualizer.visualize_performance()
+    visualizer.visualize_explanations()
 ```
 
 ## Baseline Model: Logistic Regression
