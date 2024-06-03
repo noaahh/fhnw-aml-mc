@@ -13,7 +13,6 @@ jupyter: python3
 ---
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:43.802780Z', start_time: '2024-06-03T12:46:43.795295Z'}
 import pandas as pd
 from datetime import datetime
 from collections import OrderedDict
@@ -34,7 +33,6 @@ data_reduction = OrderedDict()
 ## Helper Functions
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:48.728626Z', start_time: '2024-06-03T12:46:48.724488Z'}
 def remap_values(df, column, mapping):
     # assert that all values in the column are in the mapping except for NaN
     assert df[column].dropna().isin(mapping.keys()).all()
@@ -59,7 +57,6 @@ def read_csv(file_path, sep=";", dtypes=None):
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:48.870282Z', start_time: '2024-06-03T12:46:48.840483Z'}
 def plot_categorical_variables(df, categorical_columns, fill_na_value='NA'):
     """
     Plots count plots for categorical variables in a DataFrame, filling NA values with a specified string.
@@ -159,7 +156,6 @@ def add_percentage_labels(ax, hue_order):
 ### Accounts
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:49.066309Z', start_time: '2024-06-03T12:46:49.040353Z'}
 accounts_df = read_csv("data/account.csv")
 
 # Translated frequency from Czech to English
@@ -180,30 +176,25 @@ accounts_df.info()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:49.173112Z', start_time: '2024-06-03T12:46:49.163463Z'}
 # todo add some basic eda here
 accounts_df.head()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:49.385944Z', start_time: '2024-06-03T12:46:49.381821Z'}
 accounts_df.nunique()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:49.954761Z', start_time: '2024-06-03T12:46:49.738723Z'}
 plot_categorical_variables(accounts_df, ['account_frequency'])
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:50.407893Z', start_time: '2024-06-03T12:46:50.083300Z'}
 plot_numerical_distributions(accounts_df, ['account_created'])
 ```
 
 ### Clients
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:50.918602Z', start_time: '2024-06-03T12:46:50.576931Z'}
 clients_df = read_csv("data/client.csv")
 
 def parse_birth_number(birth_number):
@@ -252,55 +243,46 @@ clients_df.info()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:50.965782Z', start_time: '2024-06-03T12:46:50.960895Z'}
 # todo add some basic eda here
 clients_df.head()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:51.234674Z', start_time: '2024-06-03T12:46:51.224454Z'}
 clients_df.describe()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:52.253928Z', start_time: '2024-06-03T12:46:51.664038Z'}
 plot_numerical_distributions(clients_df, ['birth_date', 'age'])
 ```
 
 ### Dispositions
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:52.265745Z', start_time: '2024-06-03T12:46:52.256747Z'}
 dispositions_df = read_csv("data/disp.csv")
 dispositions_df.info()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:52.378199Z', start_time: '2024-06-03T12:46:52.374087Z'}
 dispositions_df.head()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:52.455815Z', start_time: '2024-06-03T12:46:52.448537Z'}
 dispositions_df.describe()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:52.961120Z', start_time: '2024-06-03T12:46:52.852434Z'}
 plot_categorical_variables(dispositions_df, ['type'])
 ```
 
 As the goal of this model is to address accounts and not client directly we will focus on the clients which own an account and focus solely on them.
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:53.081161Z', start_time: '2024-06-03T12:46:53.076386Z'}
 dispositions_df = dispositions_df[dispositions_df['type'] == 'OWNER']
 ```
 
 ### Orders
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:53.562173Z', start_time: '2024-06-03T12:46:53.541316Z'}
 orders_df = read_csv("data/order.csv")
 
 # Translated from Czech to English
@@ -320,36 +302,30 @@ orders_df.info()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:53.963681Z', start_time: '2024-06-03T12:46:53.958749Z'}
 orders_df.head()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:54.207857Z', start_time: '2024-06-03T12:46:54.198627Z'}
 orders_df.describe()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:54.478325Z', start_time: '2024-06-03T12:46:54.471129Z'}
 orders_df.nunique()
 ```
 
 There appear to be as many order ids as there are rows.
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:55.518897Z', start_time: '2024-06-03T12:46:54.993168Z'}
 plot_categorical_variables(orders_df, ['k_symbol', 'bank_to'])
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:55.974512Z', start_time: '2024-06-03T12:46:55.541985Z'}
 plot_numerical_distributions(orders_df, ['debited_amount'])
 ```
 
 ### Transactions
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:58.609556Z', start_time: '2024-06-03T12:46:56.088509Z'}
 # column 8 is the 'bank' column which contains NaNs and must be read as string
 transactions_df = read_csv("data/trans.csv", dtypes={8: str})
 
@@ -390,22 +366,18 @@ transactions_df.info()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:58.648455Z', start_time: '2024-06-03T12:46:58.638047Z'}
 transactions_df.head()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:46:58.837522Z', start_time: '2024-06-03T12:46:58.649152Z'}
 transactions_df.describe()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:47:02.571271Z', start_time: '2024-06-03T12:46:58.844956Z'}
 plot_categorical_variables(transactions_df, ['transaction_type', 'operation', 'k_symbol'])
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:47:10.069811Z', start_time: '2024-06-03T12:47:02.572795Z'}
 plot_numerical_distributions(transactions_df, ['date', 'amount', 'balance'])
 ```
 
@@ -420,7 +392,6 @@ According to description of the field balance: "balance after transaction"
 #### Transaction Amounts and Counts by Month
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:47:12.128480Z', start_time: '2024-06-03T12:47:10.070947Z'}
 # Getting a list of unique years from the dataset
 transactions_df['year'] = transactions_df['date'].dt.year
 transactions_df['month'] = transactions_df['date'].dt.month
@@ -464,7 +435,6 @@ plt.show()
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2024-06-03T12:47:15.722730Z', start_time: '2024-06-03T12:47:12.129671Z'}
 fig, axs = plt.subplots(2, len(years), figsize=(40 * len(years) / 2, 30), sharey='row', gridspec_kw={'height_ratios': [3, 1]})
 
 for i, year in enumerate(years):
