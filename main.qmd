@@ -1822,7 +1822,6 @@ validate_monthly_aggregated_transactions(agg_transactions_monthly_df, transactio
 ```
 
 # Exploratory Data Analysis: Aggregated Monthly Transactions
-
 ## Monthly Balance Difference and Volume
 
 This plot gives a clear picture of how money moves in and out of an account each month and how these movements affect the overall balance. It does this by showing two things:
@@ -2377,145 +2376,99 @@ The `train_evaluate_model` function is designed to streamline the process of tra
 The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
 
 ```{python}
+import numpy as np
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.impute import SimpleImputer
-from sklearn.compose import ColumnTransformer
-from sklearn.feature_selection import RFECV
-from sklearn.model_selection import KFold
-
-
-def create_pipeline_steps(model, feature_columns, train_data_df, cv_k, include_rfecv=False):
-    """
-    Create a scikit-learn pipeline for preprocessing and model training.
-    Optionally includes Recursive Feature Elimination with cross-validation.
-
-    Parameters:
-    - model: The machine learning model to be trained.
-    - feature_columns: List of column names to be used as features.
-    - train_data_df: DataFrame containing the training data.
-    - cv_k: Number of cross-validation folds.
-    - include_rfecv: Boolean to include RFECV in the pipeline.
-
-    Returns:
-    - List of tuples: Steps for the scikit-learn pipeline.
-    """
-    missing_features = set(feature_columns) - set(train_data_df.columns)
-    if missing_features:
-        raise ValueError(f"Features missing in DataFrame: {missing_features}")
-    
-    numerical_features = [
-        col for col in feature_columns if train_data_df[col].dtype in ["int64", "float64"]
-    ]
-    categorical_features = [
-        col for col in feature_columns if train_data_df[col].dtype == "object"
-    ]
-
-    numerical_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="mean")), 
-        ("scaler", StandardScaler())
-    ])
-
-    categorical_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("onehot", OneHotEncoder(handle_unknown="ignore")),
-    ])
-
-    preprocessor = ColumnTransformer([
-        ("num", numerical_pipeline, numerical_features),
-        ("cat", categorical_pipeline, categorical_features),
-    ])
-
-    steps = [("preprocessor", preprocessor)]
-
-    if include_rfecv:
-        rfecv = RFECV(estimator=model, step=1, cv=KFold(cv_k), scoring='accuracy', n_jobs=-1, verbose=1)
-        steps.append(("rfecv", rfecv))
-
-    steps.append(("model", model))
-    return steps
-```
-
-```{python}
 from sklearn.model_selection import cross_validate
-from sklearn.metrics import roc_auc_score, make_scorer
-
-from sklearn.metrics import f1_score
-
-from sklearn.metrics import precision_score
-
-from sklearn.metrics import recall_score
+from sklearn.metrics import make_scorer, f1_score, roc_auc_score, precision_score, recall_score, precision_recall_curve
+import scikitplot as skplt
+import dalex as dx
 
 
-def train_evaluate_model(
-    estimator,
-    X_train,
-    y_train,
-    X_test,
-    y_test,
-    feature_columns,
-    include_rfecv=False,
-    cv=5,
-):
-    """
-    Trains and evaluates a given model based on specified feature columns using cross-validation.
+class Trainer:
+    def __init__(self, train_df, test_df, feature_columns, target_column, model):
+        self.train_df = train_df
+        self.test_df = test_df
+        self.feature_columns = feature_columns
+        self.target_column = target_column
+        self.model = model
+        self.preprocessor = None
+        self.pipeline = None
+        self.metrics_report = None
 
-    Parameters:
-    - estimator: The machine learning model to be trained.
-    - train_df: DataFrame containing the training data.
-    - test_df: DataFrame containing the test data.
-    - feature_columns: List of column names to be used as features.
-    - cv: Number of cross-validation folds. Default is 10.
+    def preprocess_data(self):
+        numerical_features = [col for col in self.feature_columns if self.train_df[col].dtype in ["int64", "float64"]]
+        categorical_features = [col for col in self.feature_columns if self.train_df[col].dtype == "object"]
 
-    Returns:
-    - metrics_report: Summary of evaluation metrics including mean and standard deviation for accuracy, F1, AUC-ROC, precision, recall.
-    - y_test: True labels for the test set.
-    - y_pred_proba: Predicted probabilities for the test set.
-    """
-    scoring = {
-        "accuracy": "accuracy",
-        "f1_macro": make_scorer(f1_score),
-        "roc_auc": "roc_auc",
-        "precision": make_scorer(precision_score),
-        "recall": make_scorer(recall_score),
-    }
+        numerical_pipeline = Pipeline(
+            [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
+        )
 
-    pipeline_steps = create_pipeline_steps(estimator, feature_columns, X_train, cv, include_rfecv)
-    pipeline = Pipeline(pipeline_steps)
+        categorical_pipeline = Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore")),
+            ]
+        )
 
-    train_metrics_summary = cross_validate(
-        pipeline, X_train, y_train, scoring=scoring, cv=cv, return_train_score=False
-    )
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ("num", numerical_pipeline, numerical_features),
+                ("cat", categorical_pipeline, categorical_features),
+            ]
+        )
 
-    pipeline.fit(X_train, y_train)
+        self.preprocessor = preprocessor
 
-    y_pred_proba = (
-        pipeline.predict_proba(X_test) if hasattr(pipeline, "predict_proba") else np.nan
-    )
+    def train_model(self):
+        X_train, y_train = self.train_df[self.feature_columns], self.train_df[self.target_column]
 
-    test_metrics = {
-        "accuracy": pipeline.score(X_test, y_test),
-        "f1_macro": f1_score(y_test, pipeline.predict(X_test), average="macro"),
-        "roc_auc": (
-            roc_auc_score(y_test, y_pred_proba[:, 1])
-            if hasattr(pipeline, "predict_proba")
-            else np.nan
-        ),
-        "precision": precision_score(y_test, pipeline.predict(X_test)),
-        "recall": recall_score(y_test, pipeline.predict(X_test)),
-    }
+        pipeline = Pipeline([("preprocessor", self.preprocessor), ("model", self.model)])
+        pipeline.fit(X_train, y_train)
 
-    return {
-            "train": {
-                metric: {
-                    "mean": train_metrics_summary[f"test_{metric}"].mean(),
-                    "std": train_metrics_summary[f"test_{metric}"].std(),
-                }
-                for metric in scoring
-            },
-            "test": {metric: test_metrics[metric] for metric in scoring},
-            "pipeline": pipeline,
+        self.pipeline = pipeline
+
+    def evaluate_model(self, cv=10):
+        X_train, y_train = self.train_df[self.feature_columns], self.train_df[self.target_column]
+        X_test, y_test = self.test_df[self.feature_columns], self.test_df[self.target_column]
+
+        scoring = {
+            "accuracy": "accuracy",
+            "f1_macro": make_scorer(f1_score),
+            "roc_auc": "roc_auc",
+            "precision": make_scorer(precision_score),
+            "recall": make_scorer(recall_score),
         }
+
+        train_metrics_summary = cross_validate(
+            self.pipeline, X_train, y_train, scoring=scoring, cv=cv, return_train_score=False
+        )
+
+        y_pred_proba = self.pipeline.predict_proba(X_test)[:, 1] if hasattr(self.pipeline, "predict_proba") else np.nan
+
+        test_metrics = {
+            "accuracy": self.pipeline.score(X_test, y_test),
+            "f1_macro": f1_score(y_test, self.pipeline.predict(X_test), average="macro"),
+            "roc_auc": roc_auc_score(y_test, y_pred_proba) if hasattr(self.pipeline, "predict_proba") else np.nan,
+            "precision": precision_score(y_test, self.pipeline.predict(X_test)),
+            "recall": recall_score(y_test, self.pipeline.predict(X_test))
+        }
+
+        self.metrics_report = {
+            "train": {metric: {"folds": train_metrics_summary[f"test_{metric}"].tolist(), "mean": train_metrics_summary[f"test_{metric}"].mean(), "std": train_metrics_summary[f"test_{metric}"].std()} for metric in scoring},
+            "test": {metric: test_metrics[metric] for metric in scoring}
+        }
+
+    def get_trained_model(self):
+        return self.pipeline
+
+    def get_preprocessor(self):
+        return self.preprocessor
+
+    def get_metrics_report(self):
+        return self.metrics_report
 ```
 
 The `visualize_results` function is designed to visualize the results of the model evaluation. It displays the following plots:
@@ -2526,103 +2479,202 @@ The `visualize_results` function is designed to visualize the results of the mod
 4. **ROC Curve**: A Receiver Operating Characteristic (ROC) curve showing the true positive rate against the false positive rate.
 5. **Precision-Recall Curve**: A precision-recall curve showing the precision against the recall.
 6. **Lift Curve**: A lift curve showing the ratio of the response rate to the random model response rate.
-7. **Cumulative Gain Curve**: A cumulative gain curve showing the ratio of the cumulative number of positive responses to the random model cumulative number of positive responses.
-8.
+7. **Cumulative Gain Curve**: A cumulative gain curve showing the ratio of the cumulative number of positive responses to the random model cumulative number of positive responses
+    .
 
 ```{python}
-import scikitplot as skplt
+from sklearn.metrics import classification_report, precision_recall_curve
 
-def visualize_results(metrics_report, model_name, cv=5):
-    """
-    Visualizes the results from the given metrics report dictionary.
+class Visualizer:
+    def __init__(self, trainer, model_name):
+        self.trainer = trainer
+        self.model_name = model_name
+        self.explainer = dx.Explainer(trainer.get_trained_model(), trainer.test_df[trainer.feature_columns], trainer.test_df[trainer.target_column])
+        self.y_true = trainer.test_df[trainer.target_column]
+        self.y_pred_proba = trainer.get_trained_model().predict_proba(trainer.test_df[trainer.feature_columns])
 
-    Parameters:
-    - metrics_report: Dictionary containing training and test metrics.
-    - model_name: Name of the model.
-    - y_true: True labels.
-    - y_pred_proba: Predicted probabilities.
-    - cv: Number of cross-validation folds.
+    def prepare_plot_layout(self, num_plots, num_cols=2):
+        num_rows = (num_plots + num_cols - 1) // num_cols
+        fig, axes = plt.subplots(num_rows, num_cols, figsize=(20, 6 * num_rows), tight_layout=True)
+        axes = axes.flatten()
+        if num_plots < num_cols:
+            for i in range(num_plots, num_cols):
+                fig.delaxes(axes[i])
+        return fig, axes[:num_plots]
 
-    Returns:
-    - None: Displays the plots.
-    """
-    train_metrics = metrics_report["train"]
-    test_metrics = metrics_report["test"]
+    def plot_validation_metrics(self, ax):
+        train_metrics = self.trainer.get_metrics_report()['train']
+        cv = len(train_metrics['accuracy']['folds'])
 
-    metrics = train_metrics.keys()
-    val_means = [train_metrics[metric]["mean"] for metric in metrics]
-    val_stds = [train_metrics[metric]["std"] for metric in metrics]
+        metrics = list(train_metrics.keys())
+        val_means = [train_metrics[metric]['mean'] for metric in metrics]
+        val_stds = [train_metrics[metric]['std'] for metric in metrics]
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(metrics, val_means, yerr=val_stds, capsize=5, color="c", alpha=0.7)
-    plt.title(f"{model_name}: Validation Metrics with Error Bars (CV={cv})")
-    plt.xlabel("Metrics")
-    plt.ylabel("Score")
-    for i, (mean, std) in enumerate(zip(val_means, val_stds)):
-        plt.text(
-            i, mean + std + 0.01, f"{mean:.2f} ± {std:.2f}", ha="center", va="bottom"
-        )
-    plt.ylim(0, 1)
-    plt.grid(True)
-    plt.show()
+        ax.bar(metrics, val_means, yerr=val_stds, capsize=5, color='c', alpha=0.7)
+        ax.set_title(f'{self.model_name}: Validation Metrics with Error Bars (CV={cv})')
+        ax.set_xlabel('Metrics')
+        ax.set_ylabel('Score')
+        for i, (mean, std) in enumerate(zip(val_means, val_stds)):
+            ax.text(i, mean + std + 0.01, f"{mean:.2f} ± {std:.2f}", ha='center', va='bottom')
+        ax.set_ylim(0, 1)
+        ax.grid(True)
 
-    test_values = list(test_metrics.values())
-    test_names = list(test_metrics.keys())
+    def plot_test_metrics(self, ax):
+        test_metrics = self.trainer.get_metrics_report()['test']
+        test_values = list(test_metrics.values())
+        test_names = list(test_metrics.keys())
 
-    plt.figure(figsize=(10, 6))
-    sns.barplot(x=test_names, y=test_values)
-    plt.title(f"{model_name}: Test Metrics")
-    plt.xlabel("Metrics")
-    plt.ylabel("Score")
-    for i, v in enumerate(test_values):
-        if np.isnan(v):
-            plt.text(i, 0.5, "N/A", ha="center", va="bottom")
-        else:
-            plt.text(i, v + 0.01, f"{v:.2f}", ha="center", va="bottom")
-    plt.ylim(0, 1)
-    plt.grid(True)
-    plt.show()
-        
-def visualise_cm(y_true, y_pred_proba, title):
-    skplt.metrics.plot_confusion_matrix(y_true, y_pred_proba, figsize=(10, 6))
-    plt.title(title)
-    plt.show()
-    
-def visualise_roc_curve(y_true, y_pred_proba, title):
-    skplt.metrics.plot_roc(y_true, y_pred_proba, figsize=(10, 6))
-    plt.title(title)
-    plt.show()
-    
-def visualise_precision_recall_curve(y_true, y_pred_proba, title):
-    skplt.metrics.plot_precision_recall(y_true, y_pred_proba, figsize=(10, 6))
-    plt.title(title)
-    plt.show()
+        sns.barplot(x=test_names, y=test_values, ax=ax)
+        ax.set_title(f'{self.model_name}: Test Metrics')
+        ax.set_xlabel('Metrics')
+        ax.set_ylabel('Score')
+        for i, v in enumerate(test_values):
+            if np.isnan(v):
+                ax.text(i, 0.5, "N/A", ha='center', va='bottom')
+            else:
+                ax.text(i, v + 0.01, f"{v:.2f}", ha='center', va='bottom')
+        ax.set_ylim(0, 1)
+        ax.grid(True)
+
+    def plot_confusion_matrix(self, ax):
+        preds = self.y_pred_proba.argmax(axis=1)
+        skplt.metrics.plot_confusion_matrix(self.y_true, preds, ax=ax)
+        ax.set_title(f'{self.model_name}: Confusion Matrix')
+
+    def plot_classification_report(self, ax):
+        preds = self.y_pred_proba.argmax(axis=1)
+        report = classification_report(self.y_true, preds, output_dict=True)
+
+        report_df = pd.DataFrame(report).transpose()
+        report_df = report_df.round(2)
+
+        table = ax.table(cellText=report_df.values, colLabels=report_df.columns, rowLabels=report_df.index,
+                         cellLoc='center', rowLoc='center', loc='center', fontsize=12)
+        table.auto_set_font_size(False)
+        table.set_fontsize(12)
+        table.scale(1.2, 1.2)
+
+        ax.axis('off')
+        ax.set_title(f'{self.model_name}: Classification Report')
+
+    def plot_threshold_optimization(self, ax):
+        precision, recall, thresholds = precision_recall_curve(self.y_true, self.y_pred_proba[:, 1])
+        f1_scores = 2 * (precision * recall) / (precision + recall)
+        optimal_idx = np.argmax(f1_scores)
+        optimal_threshold = thresholds[optimal_idx]
+        ax.plot(thresholds, f1_scores[:-1], label='F1-score')
+        ax.axvline(x=optimal_threshold, color='red', linestyle='--', label=f'Optimal Threshold: {optimal_threshold:.2f}')
+        ax.set_title(f'{self.model_name}: Threshold Optimization')
+        ax.set_xlabel('Threshold')
+        ax.set_ylabel('F1-score')
+        ax.legend()
+
+    def plot_roc_curve(self, ax):
+        skplt.metrics.plot_roc(self.y_true, self.y_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: ROC Curve on Test Set')
+
+    def plot_precision_recall_curve(self, ax):
+        skplt.metrics.plot_precision_recall(self.y_true, self.y_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: Precision-Recall Curve on Test Set')
+
+    def plot_lift_curve(self, ax):
+        skplt.metrics.plot_lift_curve(self.y_true, self.y_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: Lift Curve on Test Set')
+
+    def plot_cumulative_gain_curve(self, ax):
+        skplt.metrics.plot_cumulative_gain(self.y_true, self.y_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: Cumulative Gain Curve on Test Set')
+
+    def plot_partial_dependence(self, feature):
+        pdp = self.explainer.model_profile(type='partial', variables=feature)
+        pdp.plot()
+
+    def plot_accumulated_local_effects(self, feature):
+        ale = self.explainer.model_profile(type='accumulated', variables=feature)
+        ale.plot()
+
+    def plot_breakdown(self, observation):
+        breakdown = self.explainer.predict_parts(observation, type='break_down')
+        breakdown.plot()
+
+    def plot_performance_metrics(self, axes):
+        self.plot_validation_metrics(axes[0])
+        self.plot_test_metrics(axes[1])
+
+    def plot_discrimination_metrics(self, axes):
+        self.plot_roc_curve(axes[0])
+        self.plot_precision_recall_curve(axes[1])
+
+    def plot_gain_charts(self, axes):
+        self.plot_lift_curve(axes[0])
+        self.plot_cumulative_gain_curve(axes[1])
+
+    def plot_model_explanations(self):
+        # Feature importance
+        feature_importance = self.explainer.model_parts()
+        feature_importance.plot()
+
+        # Model profiles
+        model_profile = self.explainer.model_profile(type='partial')
+        model_profile.plot()
+
+    def visualize_all(self):
+        if not np.isnan(self.y_pred_proba).all():
+            fig, axes = self.prepare_plot_layout(8)
+            self.plot_performance_metrics(axes[:2])
+            self.plot_confusion_matrix(axes[2])
+            self.plot_classification_report(axes[3])
+            self.plot_discrimination_metrics(axes[4:6])
+            self.plot_gain_charts(axes[6:8])
+
+        self.plot_model_explanations()
+        plt.show()
+
+    def visualize_performance(self):
+        num_plots = 4
+        fig, axes = self.prepare_plot_layout(num_plots)
+
+        self.plot_performance_metrics(axes[:2])
+        self.plot_confusion_matrix(axes[2])
+        self.plot_classification_report(axes[3])
+
+        plt.show()
+
+    def visualize_explanations(self, feature_columns = []):
+        self.plot_model_explanations()
+
+        if not feature_columns:
+            feature_columns = self.trainer.feature_columns[0]
+            
+        # Partial Dependence Plot
+        self.plot_partial_dependence(feature_columns)  # Replace 'feature1' with the desired feature
+
+        # Accumulated Local Effects
+        self.plot_accumulated_local_effects(feature_columns)  # Replace 'feature2' with the desired feature
+
+        # Breakdown Plot
+        observation = self.trainer.test_df[self.trainer.feature_columns].iloc[0]  
+        self.plot_breakdown(observation)
+
+        plt.show()
+```
+
+```{python}
+## LEGACY SUPPORT
+def train_evaluate_model(train_df, test_df, feature_columns, model, target_column="has_card", cv=10):
+    trainer = Trainer(train_df, test_df, feature_columns, target_column, model)
+    trainer.preprocess_data()
+    trainer.train_model()
+    trainer.evaluate_model(cv=cv)
+    return trainer.get_metrics_report(), trainer
+
+def visualize_results(trainer, model_name):
+    visualizer = Visualizer(trainer, model_name)
+    visualizer.visualize_performance()
+    visualizer.visualize_explanations()
 ```
 
 ## Baseline Model: Logistic Regression
-
-We start with a simple logistic regression model as a baseline. This model is easy to interpret and can provide a good starting point for more complex models.
-
-```{python}
-feature_columns = (
-    [  # Reducing the number of features for the baseline model as per task requirements
-        "age",
-        "sex",
-        "client_region",
-    ]
-    + [
-        col
-        for col in golden_record_df.columns
-        if "M_" in col and ("_balance" in col or "_volume" in col)
-    ]
-)
-
-print(f"Number of features: {len(feature_columns)}")
-print(f"Selected features: {feature_columns}")
-```
-
-```{python}
-from sklearn.linear_model import LogisticRegression
 
 baseline_model = LogisticRegression(random_state=42, max_iter=100000)
 
@@ -2635,35 +2687,32 @@ visualize_results(
 ```
 
 ```{python}
+# Example usage
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 
-baseline_model = LogisticRegression(random_state=42, max_iter=100000)
+# Baseline Logistic Regression
+baseline_model = LogisticRegression(random_state=42, max_iter=1000)
+feature_columns = [
+                      'age',
+                      'client_region'
+                  ] + [col for col in golden_record_df.columns if 'M_' in col and ('_balance' in col or '_volume' in col)]
+target_column = 'has_card'
 
-feature_columns = X_train.columns
-
-baseline_metrics_report = train_evaluate_model(
-    baseline_model, X_train, y_train, X_test, y_test, feature_columns, include_rfecv=True
-)
-
-visualize_results(
-    baseline_metrics_report, "Baseline Logistic Regression with RFECV"
-)
+baseline_metrics_report, baseline_trainer = train_evaluate_model(train_df, test_df, feature_columns, baseline_model)
+visualize_results(baseline_trainer, "Baseline Logistic Regression")
 ```
 
-```{python}
-np.array(baseline_metrics_report["pipeline"].named_steps["preprocessor"].get_feature_names_out())
-```
-
-```{python}
-baseline_metrics_report["pipeline"].named_steps["rfecv"].support_
-```
+## Random Forest and Decision Tree Models
 
 ```{python}
 available_features = np.array(baseline_metrics_report["pipeline"].named_steps["preprocessor"].get_feature_names_out())
 selected_features = available_features[baseline_metrics_report["pipeline"].named_steps["rfecv"].support_]
 
-for feature in selected_features:
-    print(feature)
+model = RandomForestClassifier(random_state=42)
+rand_forest_metrics_report, rand_forest_trainer = train_evaluate_model(train_df, test_df, feature_columns, model)
+visualize_results(rand_forest_trainer, "Random Forest")
 ```
 
 ## Candidate Models: Random Forest and Gradient Boosting
@@ -2671,10 +2720,9 @@ for feature in selected_features:
 ```{python}
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-random_forest_model = RandomForestClassifier(n_estimators=100, random_state=42)
-rf_metrics_report, y_test, y_pred_proba = train_evaluate_model(
-    X_train, y_train, X_test, y_test, feature_columns, random_forest_model
-)
+decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
+decision_tree_metrics_report, decision_tree_trainer = train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model)
+visualize_results(decision_tree_trainer, "Decision Tree")
 ```
 
 ```{python}
