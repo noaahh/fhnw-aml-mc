@@ -8,7 +8,8 @@ format:
     code-overflow: scroll
     code-copy: hover
 execute:
-  warning: true
+  echo: true
+  output: true
 jupyter: python3
 ---
 
