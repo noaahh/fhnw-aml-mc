@@ -2334,6 +2334,23 @@ golden_record_df = golden_record_df.loc[:, ~golden_record_df.columns.str.contain
 golden_record_df.isna().sum()
 ```
 
+## Remove Time-Dependent Features
+
+```{python}
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.drop(columns=["loan_granted_date", "birth_date", "account_created"])
+print(f"Removed {num_cols_before - len(golden_record_df.columns)} time-dependent columns. Now {len(golden_record_df.columns)} columns remain.")
+```
+
+## Remove STD Columns
+
+```{python}
+std_cols = [col for col in golden_record_df.columns if "std" in col]
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.drop(columns=std_cols)
+print(f"Removed {num_cols_before - len(golden_record_df.columns)} std columns. Now {len(golden_record_df.columns)} columns remain.")
+```
+
 # Data Partitioning
 
 The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
@@ -2710,7 +2727,7 @@ def train_evaluate_model(data_module, model, cv=10, use_rfe=False, n_features_to
     trainer.eval()
     return trainer.get_metrics_report(), trainer
 
-def visualize_results(trainer, model_name, viz_explanations=False):
+def visualize_results(trainer, model_name, viz_explanations=True):
     visualizer = Visualizer(trainer, model_name)
     visualizer.visualize_performance()
     if viz_explanations:
