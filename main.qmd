@@ -13,19 +13,28 @@ jupyter: python3
 ---
 
 ```{python}
-import pandas as pd
-from datetime import datetime
 from collections import OrderedDict
+from datetime import datetime
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
+import random
 
 sns.set_theme()
-#plt.style.use('seaborn-white')
-#plt.style.use('ggplot')
+# plt.style.use('seaborn-white')
+# plt.style.use('ggplot')
 
 data_reduction = OrderedDict()
+
+SEED = 1337
+
+def seed_everything(seed):
+    np.random.seed(seed)
+    random.seed(seed)
+    
+seed_everything(SEED)
 ```
 
 # Data Import & Wrangling
@@ -36,31 +45,33 @@ data_reduction = OrderedDict()
 def remap_values(df, column, mapping):
     # assert that all values in the column are in the mapping except for NaN
     assert df[column].dropna().isin(mapping.keys()).all()
-    
-    df[column] = df[column].map(mapping, na_action='ignore')
+
+    df[column] = df[column].map(mapping, na_action="ignore")
     return df
+
 
 def map_empty_to_nan(df, column):
-    if df[column].dtype != 'object':
+    if df[column].dtype != "object":
         return df
 
-    df[column] = df[column].replace(r'^\s*$', np.nan, regex=True)
+    df[column] = df[column].replace(r"^\s*$", np.nan, regex=True)
     return df
+
 
 def read_csv(file_path, sep=";", dtypes=None):
     df = pd.read_csv(file_path, sep=sep, dtype=dtypes)
-    
+
     for col in df.columns:
         df = map_empty_to_nan(df, col)
-        
+
     return df
 ```
 
 ```{python}
-def plot_categorical_variables(df, categorical_columns, fill_na_value='NA'):
+def plot_categorical_variables(df, categorical_columns, fill_na_value="NA"):
     """
     Plots count plots for categorical variables in a DataFrame, filling NA values with a specified string.
-    
+
     Parameters:
     - df: pandas.DataFrame containing the data.
     - categorical_vars: list of strings, names of the categorical variables in df to plot.
@@ -72,32 +83,41 @@ def plot_categorical_variables(df, categorical_columns, fill_na_value='NA'):
             df[var] = df[var].fillna(fill_na_value)
 
     total = float(len(df))
-    fig, axes = plt.subplots(nrows=len(categorical_columns), figsize=(14, len(categorical_columns) * 4.5))
+    fig, axes = plt.subplots(
+        nrows=len(categorical_columns), figsize=(14, len(categorical_columns) * 4.5)
+    )
 
-    if len(categorical_columns) == 1:  # If there's only one categorical variable, wrap axes in a list
+    if (
+        len(categorical_columns) == 1
+    ):  # If there's only one categorical variable, wrap axes in a list
         axes = [axes]
 
     for i, var in enumerate(categorical_columns):
-        ax = sns.countplot(x=var, data=df, ax=axes[i], order=df[var].value_counts().index)
+        ax = sns.countplot(
+            x=var, data=df, ax=axes[i], order=df[var].value_counts().index
+        )
 
-        axes[i].set_title(f'Distribution of {var}')
-        axes[i].set_ylabel('Count')
+        axes[i].set_title(f"Distribution of {var}")
+        axes[i].set_ylabel("Count")
         axes[i].set_xlabel(var)
 
         for p in ax.patches:
             height = p.get_height()
-            ax.text(p.get_x() + p.get_width() / 2.,
-                    height + 3,
-                    '{:1.2f}%'.format((height / total) * 100),
-                    ha="center")
+            ax.text(
+                p.get_x() + p.get_width() / 2.0,
+                height + 3,
+                "{:1.2f}%".format((height / total) * 100),
+                ha="center",
+            )
 
     plt.tight_layout()
     plt.show()
 
+
 def plot_numerical_distributions(df, numerical_columns, kde=True, bins=30):
     """
     Plots the distribution of all numerical variables in a DataFrame.
-    
+
     Parameters:
     - df: pandas.DataFrame containing the data.
     """
@@ -108,37 +128,38 @@ def plot_numerical_distributions(df, numerical_columns, kde=True, bins=30):
     # Create subplots
     fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(8, 5 * nrows))
 
-
     if nrows == 1:  # If there's only one numerical variable, wrap axes in a list
         axes = [axes]
 
     for i, var in enumerate(numerical_columns):
         sns.histplot(df[var], ax=axes[i], kde=kde, bins=bins)
-        axes[i].set_title(f'Distribution of {var}')
+        axes[i].set_title(f"Distribution of {var}")
         axes[i].set_xlabel(var)
-        axes[i].set_ylabel('Frequency')
+        axes[i].set_ylabel("Frequency")
 
     plt.tight_layout()
     plt.show()
 
+
 def plot_date_monthly_counts(df, date_column, title):
     """
     Plots the monthly counts of a date column in a DataFrame.
-    
+
     Parameters:
     - df: pandas.DataFrame containing the data.
     - date_column: string, name of the date column in df to plot.
     - title: string, title of the plot.
     """
     df[date_column] = pd.to_datetime(df[date_column])
-    df['month'] = df[date_column].dt.to_period('M')
+    df["month"] = df[date_column].dt.to_period("M")
 
-    monthly_counts = df['month'].value_counts().sort_index()
-    monthly_counts.plot(kind='bar', figsize=(14, 6))
+    monthly_counts = df["month"].value_counts().sort_index()
+    monthly_counts.plot(kind="bar", figsize=(14, 6))
     plt.title(title)
-    plt.xlabel('Month')
-    plt.ylabel('Count')
+    plt.xlabel("Month")
+    plt.ylabel("Count")
     plt.show()
+
 
 def add_percentage_labels(ax, hue_order):
     for p in ax.patches:
@@ -146,13 +167,23 @@ def add_percentage_labels(ax, hue_order):
         width = p.get_width()
         x = p.get_x()
         y = p.get_y()
-        label_text = f'{height:.1f}%'
+        label_text = f"{height:.1f}%"
         label_x = x + width / 2
         label_y = y + height / 2
-        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=9, color='white', weight='bold')
+        ax.text(
+            label_x,
+            label_y,
+            label_text,
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="white",
+            weight="bold",
+        )
 ```
 
 ## Entities
+
 ### Accounts
 
 ```{python}
@@ -160,16 +191,21 @@ accounts_df = read_csv("data/account.csv")
 
 # Translated frequency from Czech to English
 # according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
-accounts_df = remap_values(accounts_df, 'frequency', {
-    "POPLATEK MESICNE": "MONTHLY_ISSUANCE",
-    "POPLATEK TYDNE": "WEEKLY_ISSUANCE",
-    "POPLATEK PO OBRATU": "ISSUANCE_AFTER_TRANSACTION"
-})
+accounts_df = remap_values(
+    accounts_df,
+    "frequency",
+    {
+        "POPLATEK MESICNE": "MONTHLY_ISSUANCE",
+        "POPLATEK TYDNE": "WEEKLY_ISSUANCE",
+        "POPLATEK PO OBRATU": "ISSUANCE_AFTER_TRANSACTION",
+    },
+)
 
-accounts_df['date'] = pd.to_datetime(accounts_df['date'], format='%y%m%d')
+accounts_df["date"] = pd.to_datetime(accounts_df["date"], format="%y%m%d")
 
-accounts_df.rename(columns={'date': 'account_created',
-                         'frequency': 'account_frequency'}, inplace=True)
+accounts_df.rename(
+    columns={"date": "account_created", "frequency": "account_frequency"}, inplace=True
+)
 
 data_reduction["Total number of accounts"] = len(accounts_df)
 accounts_df.info()
@@ -185,17 +221,18 @@ accounts_df.nunique()
 ```
 
 ```{python}
-plot_categorical_variables(accounts_df, ['account_frequency'])
+plot_categorical_variables(accounts_df, ["account_frequency"])
 ```
 
 ```{python}
-plot_numerical_distributions(accounts_df, ['account_created'])
+plot_numerical_distributions(accounts_df, ["account_created"])
 ```
 
 ### Clients
 
 ```{python}
 clients_df = read_csv("data/client.csv")
+
 
 def parse_birth_number(birth_number):
     birth_number_str = str(birth_number)
@@ -231,13 +268,13 @@ def parse_birth_number(birth_number):
     return pd.Series([sex, birth_date])
 
 
-clients_df[['sex', 'birth_date']] = clients_df['birth_number'].apply(parse_birth_number)
+clients_df[["sex", "birth_date"]] = clients_df["birth_number"].apply(parse_birth_number)
 
 # Calculate 'age' assuming the reference year is 1999
-clients_df['age'] = clients_df['birth_date'].apply(lambda x: 1999 - x.year)
+clients_df["age"] = clients_df["birth_date"].apply(lambda x: 1999 - x.year)
 
 # Drop 'birth_number' column as it is no longer needed
-clients_df = clients_df.drop(columns=['birth_number'])
+clients_df = clients_df.drop(columns=["birth_number"])
 
 clients_df.info()
 ```
@@ -252,7 +289,7 @@ clients_df.describe()
 ```
 
 ```{python}
-plot_numerical_distributions(clients_df, ['birth_date', 'age'])
+plot_numerical_distributions(clients_df, ["birth_date", "age"])
 ```
 
 ### Dispositions
@@ -271,13 +308,13 @@ dispositions_df.describe()
 ```
 
 ```{python}
-plot_categorical_variables(dispositions_df, ['type'])
+plot_categorical_variables(dispositions_df, ["type"])
 ```
 
 As the goal of this model is to address accounts and not client directly we will focus on the clients which own an account and focus solely on them.
 
 ```{python}
-dispositions_df = dispositions_df[dispositions_df['type'] == 'OWNER']
+dispositions_df = dispositions_df[dispositions_df["type"] == "OWNER"]
 ```
 
 ### Orders
@@ -287,16 +324,20 @@ orders_df = read_csv("data/order.csv")
 
 # Translated from Czech to English
 # according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
-orders_df = remap_values(orders_df, 'k_symbol', {
-    "POJISTNE": "Insurance_Payment",
-    "SIPO": "Household",
-    "LEASING": "Leasing",
-    "UVER": "Loan_Payment"
-})
+orders_df = remap_values(
+    orders_df,
+    "k_symbol",
+    {
+        "POJISTNE": "Insurance_Payment",
+        "SIPO": "Household",
+        "LEASING": "Leasing",
+        "UVER": "Loan_Payment",
+    },
+)
 
-orders_df['account_to'] = orders_df['account_to'].astype('category')
+orders_df["account_to"] = orders_df["account_to"].astype("category")
 
-orders_df = orders_df.rename(columns={'amount': 'debited_amount'})
+orders_df = orders_df.rename(columns={"amount": "debited_amount"})
 
 orders_df.info()
 ```
@@ -316,11 +357,11 @@ orders_df.nunique()
 There appear to be as many order ids as there are rows.
 
 ```{python}
-plot_categorical_variables(orders_df, ['k_symbol', 'bank_to'])
+plot_categorical_variables(orders_df, ["k_symbol", "bank_to"])
 ```
 
 ```{python}
-plot_numerical_distributions(orders_df, ['debited_amount'])
+plot_numerical_distributions(orders_df, ["debited_amount"])
 ```
 
 ### Transactions
@@ -329,38 +370,54 @@ plot_numerical_distributions(orders_df, ['debited_amount'])
 # column 8 is the 'bank' column which contains NaNs and must be read as string
 transactions_df = read_csv("data/trans.csv", dtypes={8: str})
 
-transactions_df['date'] = pd.to_datetime(transactions_df['date'], format='%y%m%d')
+transactions_df["date"] = pd.to_datetime(transactions_df["date"], format="%y%m%d")
 
 # Translated type, operations and characteristics from Czech to English
 # according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
-transactions_df = remap_values(transactions_df, 'type', {
-    "VYBER": "Withdrawal", # Also withdrawal as it is against the documentation present in the dataset
-    "PRIJEM": "Credit",
-    "VYDAJ": "Withdrawal"
-})
+transactions_df = remap_values(
+    transactions_df,
+    "type",
+    {
+        "VYBER": "Withdrawal",  # Also withdrawal as it is against the documentation present in the dataset
+        "PRIJEM": "Credit",
+        "VYDAJ": "Withdrawal",
+    },
+)
 
-transactions_df = remap_values(transactions_df, 'operation', {
-    "VYBER KARTOU": "Credit Card Withdrawal",
-    "VKLAD": "Credit in Cash",
-    "PREVOD Z UCTU": "Collection from Another Bank",
-    "VYBER": "Withdrawal in Cash",
-    "PREVOD NA UCET": "Remittance to Another Bank"
-})
+transactions_df = remap_values(
+    transactions_df,
+    "operation",
+    {
+        "VYBER KARTOU": "Credit Card Withdrawal",
+        "VKLAD": "Credit in Cash",
+        "PREVOD Z UCTU": "Collection from Another Bank",
+        "VYBER": "Withdrawal in Cash",
+        "PREVOD NA UCET": "Remittance to Another Bank",
+    },
+)
 
-transactions_df = remap_values(transactions_df, 'k_symbol', {
-    "POJISTNE": "Insurance Payment",
-    "SLUZBY": "Payment on Statement",
-    "UROK": "Interest Credited",
-    "SANKC. UROK": "Sanction Interest",
-    "SIPO": "Household",
-    "DUCHOD": "Old-age Pension",
-    "UVER": "Loan Payment"
-})
+transactions_df = remap_values(
+    transactions_df,
+    "k_symbol",
+    {
+        "POJISTNE": "Insurance Payment",
+        "SLUZBY": "Payment on Statement",
+        "UROK": "Interest Credited",
+        "SANKC. UROK": "Sanction Interest",
+        "SIPO": "Household",
+        "DUCHOD": "Old-age Pension",
+        "UVER": "Loan Payment",
+    },
+)
 
 # Set the amount to negative for withdrawals and positive for credits
-transactions_df['amount'] = np.where(transactions_df['type'] == "Credit", transactions_df['amount'], -transactions_df['amount'])
+transactions_df["amount"] = np.where(
+    transactions_df["type"] == "Credit",
+    transactions_df["amount"],
+    -transactions_df["amount"],
+)
 
-transactions_df.rename(columns={'type': 'transaction_type'}, inplace=True)
+transactions_df.rename(columns={"type": "transaction_type"}, inplace=True)
 
 transactions_df.info()
 ```
@@ -374,11 +431,13 @@ transactions_df.describe()
 ```
 
 ```{python}
-plot_categorical_variables(transactions_df, ['transaction_type', 'operation', 'k_symbol'])
+plot_categorical_variables(
+    transactions_df, ["transaction_type", "operation", "k_symbol"]
+)
 ```
 
 ```{python}
-plot_numerical_distributions(transactions_df, ['date', 'amount', 'balance'])
+plot_numerical_distributions(transactions_df, ["date", "amount", "balance"])
 ```
 
 Looking at the distributions of the transaction table we can see that the count of transactions per year increase over time. So we can conclude that the bank has a growing client base.
@@ -393,79 +452,128 @@ According to description of the field balance: "balance after transaction"
 
 ```{python}
 # Getting a list of unique years from the dataset
-transactions_df['year'] = transactions_df['date'].dt.year
-transactions_df['month'] = transactions_df['date'].dt.month
+transactions_df["year"] = transactions_df["date"].dt.year
+transactions_df["month"] = transactions_df["date"].dt.month
 
-months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-years = sorted(transactions_df['year'].unique())
+months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
+years = sorted(transactions_df["year"].unique())
 
-fig, axs = plt.subplots(len(years) * 2, 1, figsize=(15, 6 * len(years)), sharex=True, gridspec_kw={'height_ratios': [3, 1] * len(years)})
+fig, axs = plt.subplots(
+    len(years) * 2,
+    1,
+    figsize=(15, 6 * len(years)),
+    sharex=True,
+    gridspec_kw={"height_ratios": [3, 1] * len(years)},
+)
 
 for i, year in enumerate(years):
     # Filter transactions for the current year
-    yearly_transactions = transactions_df[transactions_df['year'] == year]
+    yearly_transactions = transactions_df[transactions_df["year"] == year]
 
     # Preparing data for the box plot: a list of amounts for each month for the current year
-    amounts_per_month_yearly = [yearly_transactions[yearly_transactions['month'] == month]['amount'] for month in range(1, 13)]
+    amounts_per_month_yearly = [
+        yearly_transactions[yearly_transactions["month"] == month]["amount"]
+        for month in range(1, 13)
+    ]
 
     # Preparing data for the bar chart for the current year
-    monthly_summary_yearly = yearly_transactions.groupby('month').agg(TotalAmount=('amount', 'sum'), TransactionCount=('amount', 'count')).reset_index()
+    monthly_summary_yearly = (
+        yearly_transactions.groupby("month")
+        .agg(TotalAmount=("amount", "sum"), TransactionCount=("amount", "count"))
+        .reset_index()
+    )
 
     # Box plot for transaction amounts by month for the current year
-    axs[i*2].boxplot(amounts_per_month_yearly, patch_artist=True)
+    axs[i * 2].boxplot(amounts_per_month_yearly, patch_artist=True)
     # now with seaborn
     # sns.boxplot(data=yearly_transactions, x='month', y='amount', ax=axs[i*2])
-    axs[i*2].set_title(f'Transaction Amounts Per Month in {year} (Box Plot)')
-    axs[i*2].set_yscale('symlog')
-    axs[i*2].set_ylabel('Transaction Amounts (log scale)')
-    axs[i*2].grid(True, which='both')
+    axs[i * 2].set_title(f"Transaction Amounts Per Month in {year} (Box Plot)")
+    axs[i * 2].set_yscale("symlog")
+    axs[i * 2].set_ylabel("Transaction Amounts (log scale)")
+    axs[i * 2].grid(True, which="both")
 
     # Bar chart for transaction count by month for the current year
-    axs[i*2 + 1].bar(monthly_summary_yearly['month'], monthly_summary_yearly['TransactionCount'], color='tab:red', alpha=0.6)
-    axs[i*2 + 1].set_ylabel('Transaction Count')
-    axs[i*2 + 1].grid(True, which='both')
+    axs[i * 2 + 1].bar(
+        monthly_summary_yearly["month"],
+        monthly_summary_yearly["TransactionCount"],
+        color="tab:red",
+        alpha=0.6,
+    )
+    axs[i * 2 + 1].set_ylabel("Transaction Count")
+    axs[i * 2 + 1].grid(True, which="both")
 
 # Setting x-ticks and labels for the last bar chart (shared x-axis for all)
 axs[-1].set_xticks(range(1, 13))
 axs[-1].set_xticklabels(months)
-axs[-1].set_xlabel('Month')
+axs[-1].set_xlabel("Month")
 
 plt.tight_layout()
 plt.show()
 ```
 
 ```{python}
-fig, axs = plt.subplots(2, len(years), figsize=(40 * len(years) / 2, 30), sharey='row', gridspec_kw={'height_ratios': [3, 1]})
+fig, axs = plt.subplots(
+    2,
+    len(years),
+    figsize=(40 * len(years) / 2, 30),
+    sharey="row",
+    gridspec_kw={"height_ratios": [3, 1]},
+)
 
 for i, year in enumerate(years):
     # Filter transactions for the current year
-    yearly_transactions = transactions_df[transactions_df['year'] == year]
+    yearly_transactions = transactions_df[transactions_df["year"] == year]
 
     # Preparing data for the box plot: a list of amounts for each month for the current year
-    amounts_per_month_yearly = [yearly_transactions[yearly_transactions['month'] == month]['amount'] for month in range(1, 13)]
+    amounts_per_month_yearly = [
+        yearly_transactions[yearly_transactions["month"] == month]["amount"]
+        for month in range(1, 13)
+    ]
 
     # Preparing data for the bar chart for the current year
-    monthly_summary_yearly = yearly_transactions.groupby('month').agg(TotalAmount=('amount', 'sum'), TransactionCount=('amount', 'count')).reset_index()
+    monthly_summary_yearly = (
+        yearly_transactions.groupby("month")
+        .agg(TotalAmount=("amount", "sum"), TransactionCount=("amount", "count"))
+        .reset_index()
+    )
 
     # Selecting the appropriate axes for multiple or single year scenarios
     ax_box = axs[0, i] if len(years) > 1 else axs[0]
     ax_bar = axs[1, i] if len(years) > 1 else axs[1]
-    
-    ax_box.boxplot(amounts_per_month_yearly, patch_artist=True)
-    ax_box.set_title(f'{year} (Box Plot)')
-    ax_box.set_yscale('symlog')
-    ax_box.set_ylabel('Transaction Amounts (log scale)')
-    ax_box.grid(True, which='both')
 
-    ax_bar.bar(monthly_summary_yearly['month'], monthly_summary_yearly['TransactionCount'], color='tab:red', alpha=0.6)
-    ax_bar.set_ylabel('Transaction Count')
-    ax_bar.grid(True, which='both')
+    ax_box.boxplot(amounts_per_month_yearly, patch_artist=True)
+    ax_box.set_title(f"{year} (Box Plot)")
+    ax_box.set_yscale("symlog")
+    ax_box.set_ylabel("Transaction Amounts (log scale)")
+    ax_box.grid(True, which="both")
+
+    ax_bar.bar(
+        monthly_summary_yearly["month"],
+        monthly_summary_yearly["TransactionCount"],
+        color="tab:red",
+        alpha=0.6,
+    )
+    ax_bar.set_ylabel("Transaction Count")
+    ax_bar.grid(True, which="both")
 
     # Setting common x-ticks and labels for all axes
     ax_bar.set_xticks(range(1, 13))
     ax_bar.set_xticklabels(months)
 
-fig.text(0.5, 0.04, 'Month', ha='center')
+fig.text(0.5, 0.04, "Month", ha="center")
 plt.tight_layout()
 plt.show()
 ```
@@ -473,8 +581,8 @@ plt.show()
 #### Negative Balances
 
 ```{python}
-negative_balances = transactions_df[transactions_df['balance'] < 0]
-plot_numerical_distributions(negative_balances, ['balance', 'amount'])
+negative_balances = transactions_df[transactions_df["balance"] < 0]
+plot_numerical_distributions(negative_balances, ["balance", "amount"])
 print(f"Number of transactions with negative balance: {len(negative_balances)}")
 ```
 
@@ -485,22 +593,27 @@ There appear to be 2999 transactions which have a negative balance, therefore af
 ```{python}
 loans_df = read_csv("data/loan.csv")
 
-loans_df['date'] = pd.to_datetime(loans_df['date'], format='%y%m%d')
+loans_df["date"] = pd.to_datetime(loans_df["date"], format="%y%m%d")
 
-loans_df['status'] = loans_df['status'].map({
-    "A": "Contract finished, no problems",
-    "B": "Contract finished, loan not paid",
-    "C": "Contract running, OK thus-far",
-    "D": "Contract running, client in debt"
-})
+loans_df["status"] = loans_df["status"].map(
+    {
+        "A": "Contract finished, no problems",
+        "B": "Contract finished, loan not paid",
+        "C": "Contract running, OK thus-far",
+        "D": "Contract running, client in debt",
+    }
+)
 
-loans_df.rename(columns={
-    'date': 'granted_date',
-    'amount': 'amount',
-    'duration': 'duration',
-    'payments': 'monthly_payments',
-    'status': 'status'
-}, inplace=True)
+loans_df.rename(
+    columns={
+        "date": "granted_date",
+        "amount": "amount",
+        "duration": "duration",
+        "payments": "monthly_payments",
+        "status": "status",
+    },
+    inplace=True,
+)
 
 loans_df.info()
 ```
@@ -521,13 +634,13 @@ loans_df.nunique()
 It seems as if one account can have at max one loan.
 
 ```{python}
-plot_categorical_variables(loans_df, ['duration', 'status'])
+plot_categorical_variables(loans_df, ["duration", "status"])
 ```
 
 The distribution of durations seems to be even.
 
 ```{python}
-plot_numerical_distributions(loans_df, ['granted_date'])
+plot_numerical_distributions(loans_df, ["granted_date"])
 ```
 
 ### Credit Cards
@@ -535,7 +648,9 @@ plot_numerical_distributions(loans_df, ['granted_date'])
 ```{python}
 cards_df = read_csv("data/card.csv")
 
-cards_df['issued'] = pd.to_datetime(cards_df['issued'], format='%y%m%d %H:%M:%S').dt.date
+cards_df["issued"] = pd.to_datetime(
+    cards_df["issued"], format="%y%m%d %H:%M:%S"
+).dt.date
 
 cards_df.info()
 ```
@@ -549,11 +664,11 @@ cards_df.describe()
 ```
 
 ```{python}
-plot_categorical_variables(cards_df, ['type'])
+plot_categorical_variables(cards_df, ["type"])
 ```
 
 ```{python}
-plot_numerical_distributions(cards_df, ['issued'])
+plot_numerical_distributions(cards_df, ["issued"])
 ```
 
 ### Demographic data
@@ -563,27 +678,35 @@ districts_df = read_csv("data/district.csv")
 
 # Rename columns
 # according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
-districts_df.rename(columns={
-    'A1': 'district_id',
-    'A2': 'district_name',
-    'A3': 'region',
-    'A4': 'inhabitants',
-    'A5': 'small_municipalities',
-    'A6': 'medium_municipalities',
-    'A7': 'large_municipalities',
-    'A8': 'huge_municipalities',
-    'A9': 'cities',
-    'A10': 'ratio_urban_inhabitants',
-    'A11': 'average_salary',
-    'A12': 'unemployment_rate_1995',
-    'A13': 'unemployment_rate_1996',
-    'A14': 'entrepreneurs_per_1000_inhabitants',
-    'A15': 'crimes_committed_1995',
-    'A16': 'crimes_committed_1996'
-}, inplace=True)
+districts_df.rename(
+    columns={
+        "A1": "district_id",
+        "A2": "district_name",
+        "A3": "region",
+        "A4": "inhabitants",
+        "A5": "small_municipalities",
+        "A6": "medium_municipalities",
+        "A7": "large_municipalities",
+        "A8": "huge_municipalities",
+        "A9": "cities",
+        "A10": "ratio_urban_inhabitants",
+        "A11": "average_salary",
+        "A12": "unemployment_rate_1995",
+        "A13": "unemployment_rate_1996",
+        "A14": "entrepreneurs_per_1000_inhabitants",
+        "A15": "crimes_committed_1995",
+        "A16": "crimes_committed_1996",
+    },
+    inplace=True,
+)
 
-for col in ['unemployment_rate_1995', 'unemployment_rate_1996', 'crimes_committed_1995', 'crimes_committed_1996']:
-    districts_df[col] = pd.to_numeric(districts_df[col], errors='coerce')
+for col in [
+    "unemployment_rate_1995",
+    "unemployment_rate_1996",
+    "crimes_committed_1995",
+    "crimes_committed_1996",
+]:
+    districts_df[col] = pd.to_numeric(districts_df[col], errors="coerce")
 
 districts_df.info()
 ```
@@ -604,11 +727,11 @@ districts_df.nunique()
 ```
 
 ```{python}
-plot_numerical_distributions(districts_df, ['crimes_committed_1995'])
+plot_numerical_distributions(districts_df, ["crimes_committed_1995"])
 ```
 
 ```{python}
-plot_categorical_variables(districts_df, ['region'])
+plot_categorical_variables(districts_df, ["region"])
 ```
 
 We need to differentiate between the domicile of the client and account, as they can be different.
@@ -629,94 +752,156 @@ In order to also validate the relationships from a algorithmic perspective, we c
 
 ```{python}
 # Verify 1:1 relationships between CLIENT, LOAN and DISPOSITION
-assert dispositions_df['client_id'].is_unique, "Each client_id should appear exactly once in the DISPOSITION DataFrame."
-assert loans_df['account_id'].is_unique, "Each account_id should appear exactly once in the LOAN DataFrame."
+assert dispositions_df[
+    "client_id"
+].is_unique, "Each client_id should appear exactly once in the DISPOSITION DataFrame."
+assert loans_df[
+    "account_id"
+].is_unique, "Each account_id should appear exactly once in the LOAN DataFrame."
 
 # Verify 1:M relationships between ACCOUNT and DISPOSITION
-#assert dispositions['account_id'].is_unique == False, "An account_id should appear more than once in the DISPOSITION DataFrame."
-assert dispositions_df['account_id'].is_unique == True, "An account_id should appear once in the DISPOSITION DataFrame."
+# assert dispositions['account_id'].is_unique == False, "An account_id should appear more than once in the DISPOSITION DataFrame."
+assert (
+    dispositions_df["account_id"].is_unique == True
+), "An account_id should appear once in the DISPOSITION DataFrame."
 # TODO check if in accordance to decision to remove disponents from dispositions
 
 # Verify each district_id in ACCOUNT and CLIENT exists in DISTRICT
-assert set(accounts_df['district_id']).issubset(
-    set(districts_df['district_id'])), "All district_ids in ACCOUNT should exist in DISTRICT."
-assert set(clients_df['district_id']).issubset(
-    set(districts_df['district_id'])), "All district_ids in CLIENT should exist in DISTRICT."
+assert set(accounts_df["district_id"]).issubset(
+    set(districts_df["district_id"])
+), "All district_ids in ACCOUNT should exist in DISTRICT."
+assert set(clients_df["district_id"]).issubset(
+    set(districts_df["district_id"])
+), "All district_ids in CLIENT should exist in DISTRICT."
 
 # Verify each account_id in DISPOSITION, ORDER, TRANSACTION, and LOAN exists in ACCOUNT
-assert set(dispositions_df['account_id']).issubset(
-    set(accounts_df['account_id'])), "All account_ids in DISPOSITION should exist in ACCOUNT."
-assert set(orders_df['account_id']).issubset(
-    set(accounts_df['account_id'])), "All account_ids in ORDER should exist in ACCOUNT."
-assert set(transactions_df['account_id']).issubset(
-    set(accounts_df['account_id'])), "All account_ids in TRANSACTION should exist in ACCOUNT."
-assert set(loans_df['account_id']).issubset(
-    set(accounts_df['account_id'])), "All account_ids in LOAN should exist in ACCOUNT."
+assert set(dispositions_df["account_id"]).issubset(
+    set(accounts_df["account_id"])
+), "All account_ids in DISPOSITION should exist in ACCOUNT."
+assert set(orders_df["account_id"]).issubset(
+    set(accounts_df["account_id"])
+), "All account_ids in ORDER should exist in ACCOUNT."
+assert set(transactions_df["account_id"]).issubset(
+    set(accounts_df["account_id"])
+), "All account_ids in TRANSACTION should exist in ACCOUNT."
+assert set(loans_df["account_id"]).issubset(
+    set(accounts_df["account_id"])
+), "All account_ids in LOAN should exist in ACCOUNT."
 
 # Verify each client_id in DISPOSITION exists in CLIENT
-assert set(dispositions_df['client_id']).issubset(
-    set(clients_df['client_id'])), "All client_ids in DISPOSITION should exist in CLIENT."
+assert set(dispositions_df["client_id"]).issubset(
+    set(clients_df["client_id"])
+), "All client_ids in DISPOSITION should exist in CLIENT."
 
 # Verify each disp_id in CARD exists in DISPOSITION
-assert set(cards_df['disp_id']).issubset(set(dispositions_df['disp_id'])), "All disp_ids in CARD should exist in DISPOSITION."
+assert set(cards_df["disp_id"]).issubset(
+    set(dispositions_df["disp_id"])
+), "All disp_ids in CARD should exist in DISPOSITION."
 ```
 
 # Data Preparation: Non-Transactional Data
 
 ```{python}
-orders_pivot_df = orders_df.pivot_table(index='account_id',
-                                        columns='k_symbol',
-                                        values='debited_amount',
-                                        aggfunc='sum',
-                                        fill_value=0)
+orders_pivot_df = orders_df.pivot_table(
+    index="account_id",
+    columns="k_symbol",
+    values="debited_amount",
+    aggfunc="sum",
+    fill_value=0,
+)
 
-orders_pivot_df.columns = [f'k_symbol_debited_sum_{col.lower()}' for col in orders_pivot_df.columns]
-
-# TODO: find something better than this
-orders_pivot_df = orders_pivot_df.reset_index() # Use created index as account_id
+orders_pivot_df.columns = [
+    f"k_symbol_debited_sum_{col.lower()}" for col in orders_pivot_df.columns
+]
+orders_pivot_df = orders_pivot_df.reset_index()  # Use created index as account_id
 orders_pivot_df.head()
 ```
 
 ```{python}
-def merge_non_transactional_data(clients, districts, dispositions, accounts, orders, loans, cards):
+def merge_non_transactional_data(
+    clients, districts, dispositions, accounts, orders, loans, cards
+):
     # Rename district_id for clarity in clients and accounts DataFrames
-    clients = clients.rename(columns={'district_id': 'client_district_id'})
-    accounts = accounts.rename(columns={'district_id': 'account_district_id'})
-    
+    clients = clients.rename(columns={"district_id": "client_district_id"})
+    accounts = accounts.rename(columns={"district_id": "account_district_id"})
+
     # Prepare districts dataframe for merge with prefix for clients and accounts
-    districts_client_prefixed = districts.add_prefix('client_')
-    districts_account_prefixed = districts.add_prefix('account_')
-    
+    districts_client_prefixed = districts.add_prefix("client_")
+    districts_account_prefixed = districts.add_prefix("account_")
+
     # Merge district information for clients and accounts with prefixed columns
-    clients_with_districts = pd.merge(clients, districts_client_prefixed, left_on='client_district_id', right_on='client_district_id', how='left')
-    accounts_with_districts = pd.merge(accounts, districts_account_prefixed, left_on='account_district_id', right_on='account_district_id', how='left')
+    clients_with_districts = pd.merge(
+        clients,
+        districts_client_prefixed,
+        left_on="client_district_id",
+        right_on="client_district_id",
+        how="left",
+    )
+    accounts_with_districts = pd.merge(
+        accounts,
+        districts_account_prefixed,
+        left_on="account_district_id",
+        right_on="account_district_id",
+        how="left",
+    )
 
     # Merge cards with dispositions and prefix card-related columns to avoid confusion
-    cards_prefixed = cards.add_prefix('card_')
-    dispositions_with_cards = pd.merge(dispositions, cards_prefixed, left_on='disp_id', right_on='card_disp_id', how='left')
-    
+    cards_prefixed = cards.add_prefix("card_")
+    dispositions_with_cards = pd.merge(
+        dispositions,
+        cards_prefixed,
+        left_on="disp_id",
+        right_on="card_disp_id",
+        how="left",
+    )
+
     # Merge clients (with district info) with dispositions and cards
     # Assuming dispositions might have columns that overlap with clients, prefix those if necessary
-    clients_dispositions_cards = pd.merge(dispositions_with_cards, clients_with_districts, on='client_id', how='left')
-    
+    clients_dispositions_cards = pd.merge(
+        dispositions_with_cards, clients_with_districts, on="client_id", how="left"
+    )
+
     # Merge the above with accounts (with district info) on account_id
-    accounts_clients_cards = pd.merge(accounts_with_districts, clients_dispositions_cards, on='account_id', how='left')
-    
+    accounts_clients_cards = pd.merge(
+        accounts_with_districts, clients_dispositions_cards, on="account_id", how="left"
+    )
+
     # Merge orders DataFrame, assuming orders might contain columns that could overlap, prefix as needed
-    orders_prefixed = orders.add_prefix('order_')
-    comprehensive_df_with_orders = pd.merge(accounts_clients_cards, orders_prefixed, left_on='account_id', right_on='order_account_id', how='left')
-    
+    orders_prefixed = orders.add_prefix("order_")
+    comprehensive_df_with_orders = pd.merge(
+        accounts_clients_cards,
+        orders_prefixed,
+        left_on="account_id",
+        right_on="order_account_id",
+        how="left",
+    )
+
     # Merge loans with the comprehensive dataframe (now including orders) on account_id
     # Prefix loan-related columns to maintain clarity
-    loans_prefixed = loans.add_prefix('loan_')
-    final_df = pd.merge(comprehensive_df_with_orders, loans_prefixed, left_on='account_id', right_on='loan_account_id', how='left')
+    loans_prefixed = loans.add_prefix("loan_")
+    final_df = pd.merge(
+        comprehensive_df_with_orders,
+        loans_prefixed,
+        left_on="account_id",
+        right_on="loan_account_id",
+        how="left",
+    )
 
-    final_df['account_created'] = pd.to_datetime(final_df['account_created'])
-    final_df['card_issued'] = pd.to_datetime(final_df['card_issued'])
-    final_df['has_card'] = final_df['card_issued'].notna()
+    final_df["account_created"] = pd.to_datetime(final_df["account_created"])
+    final_df["card_issued"] = pd.to_datetime(final_df["card_issued"])
+    final_df["has_card"] = final_df["card_issued"].notna()
     return final_df
 
-non_transactional_df = merge_non_transactional_data(clients_df, districts_df, dispositions_df, accounts_df, orders_pivot_df, loans_df, cards_df)
+
+non_transactional_df = merge_non_transactional_data(
+    clients_df,
+    districts_df,
+    dispositions_df,
+    accounts_df,
+    orders_pivot_df,
+    loans_df,
+    cards_df,
+)
 non_transactional_df.to_csv("data/non_transactional.csv", index=False)
 non_transactional_df.info()
 ```
@@ -724,15 +909,29 @@ non_transactional_df.info()
 # Exploratory Data Analysis
 
 ## Non-transactional Data
+
 ### Card Holders
 
 ```{python}
 plt.figure(figsize=(10, 6))
-plt.title('Number of Clients by Card Type')
-sns.barplot(x=['No Card', 'Classic/Gold Card Holders', 'Junior Card Holders'], y=[non_transactional_df['card_type'].isna().sum(), non_transactional_df['card_type'].isin(['gold', 'classic']).sum(), non_transactional_df['card_type'].eq('junior').sum()])
+plt.title("Number of Clients by Card Type")
+sns.barplot(
+    x=["No Card", "Classic/Gold Card Holders", "Junior Card Holders"],
+    y=[
+        non_transactional_df["card_type"].isna().sum(),
+        non_transactional_df["card_type"].isin(["gold", "classic"]).sum(),
+        non_transactional_df["card_type"].eq("junior").sum(),
+    ],
+)
 # ensure that the number of clients is shown on the bars
-for i, v in enumerate([non_transactional_df['card_type'].isna().sum(), non_transactional_df['card_type'].isin(['gold', 'classic']).sum(), non_transactional_df['card_type'].eq('junior').sum()]):
-    plt.text(i, v + 10, str(v), ha='center', va='bottom')
+for i, v in enumerate(
+    [
+        non_transactional_df["card_type"].isna().sum(),
+        non_transactional_df["card_type"].isin(["gold", "classic"]).sum(),
+        non_transactional_df["card_type"].eq("junior").sum(),
+    ]
+):
+    plt.text(i, v + 10, str(v), ha="center", va="bottom")
 
 plt.show()
 ```
@@ -741,24 +940,44 @@ Looking at the distribution of card holders in general we can see that the most 
 
 ```{python}
 plt.figure(figsize=(10, 6))
-plt.title(f'Distribution of Age for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}')
-sns.histplot(non_transactional_df[non_transactional_df['card_type'] == 'junior']['age'], kde=True, bins=30)
-plt.xlabel('Age of Client (presumably in 1999)')
+plt.title(
+    f'Distribution of Age for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}'
+)
+sns.histplot(
+    non_transactional_df[non_transactional_df["card_type"] == "junior"]["age"],
+    kde=True,
+    bins=30,
+)
+plt.xlabel("Age of Client (presumably in 1999)")
 plt.show()
 ```
 
 Looking at the age distribution of Junior Card holders paints a picture on this group, however only looking at the current age may be misleading as we need to understand how old they were when the card was issued to determine if they could have been eligble for a Classic/Gold card (at least 18 when the card was issued).
 
 ```{python}
-non_transactional_df['card_issued'] = pd.to_datetime(non_transactional_df['card_issued'])
+non_transactional_df["card_issued"] = pd.to_datetime(
+    non_transactional_df["card_issued"]
+)
 
-non_transactional_df['age_at_card_issuance'] = non_transactional_df['card_issued'] - non_transactional_df['birth_date']
-non_transactional_df['age_at_card_issuance'] = non_transactional_df['age_at_card_issuance'].dt.days // 365
+non_transactional_df["age_at_card_issuance"] = (
+    non_transactional_df["card_issued"] - non_transactional_df["birth_date"]
+)
+non_transactional_df["age_at_card_issuance"] = (
+    non_transactional_df["age_at_card_issuance"].dt.days // 365
+)
 
 plt.figure(figsize=(10, 6))
-plt.title(f'Distribution of Age at Card Issuance for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}')
-sns.histplot(non_transactional_df[non_transactional_df['card_type'] == 'junior']['age_at_card_issuance'], kde=True, bins=30)
-plt.xlabel('Age at Card Issuance')
+plt.title(
+    f'Distribution of Age at Card Issuance for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}'
+)
+sns.histplot(
+    non_transactional_df[non_transactional_df["card_type"] == "junior"][
+        "age_at_card_issuance"
+    ],
+    kde=True,
+    bins=30,
+)
+plt.xlabel("Age at Card Issuance")
 plt.show()
 ```
 
@@ -766,11 +985,29 @@ Here we can see that roughly 1/3 of the Junior Card holders were not of legal ag
 
 ```{python}
 plt.figure(figsize=(10, 6))
-plt.title(f'Distribution of Age at Card Issuance for All Card Types\n total count = {len(non_transactional_df)}')
-sns.histplot(non_transactional_df[non_transactional_df['card_type'] == 'junior']['age_at_card_issuance'], kde=True, bins=10, color='blue', label='Junior Card Holders')
-sns.histplot(non_transactional_df[non_transactional_df['card_type'] != 'junior']['age_at_card_issuance'], kde=True, bins=30, color='red', label='Non-Junior Card Holders')
+plt.title(
+    f"Distribution of Age at Card Issuance for All Card Types\n total count = {len(non_transactional_df)}"
+)
+sns.histplot(
+    non_transactional_df[non_transactional_df["card_type"] == "junior"][
+        "age_at_card_issuance"
+    ],
+    kde=True,
+    bins=10,
+    color="blue",
+    label="Junior Card Holders",
+)
+sns.histplot(
+    non_transactional_df[non_transactional_df["card_type"] != "junior"][
+        "age_at_card_issuance"
+    ],
+    kde=True,
+    bins=30,
+    color="red",
+    label="Non-Junior Card Holders",
+)
 plt.legend()
-plt.xlabel('Age at Card Issuance')
+plt.xlabel("Age at Card Issuance")
 plt.show()
 ```
 
@@ -780,7 +1017,9 @@ Therefore removing the subset of Junior Cards seems as valid as there is no reas
 
 ```{python}
 before_len = len(non_transactional_df)
-non_transactional_df = non_transactional_df[non_transactional_df['card_type'] != 'junior']
+non_transactional_df = non_transactional_df[
+    non_transactional_df["card_type"] != "junior"
+]
 data_reduction["Junior Card Holders"] = -(before_len - len(non_transactional_df))
 del before_len
 ```
@@ -792,14 +1031,22 @@ Looking at the age distribution of Junior card holders and their occurence in co
 The time between creating an account and issuing a card may also be important when filtering customers based on their history. We should avoid filtering out potentially interesting periods and understand how the timespans between account creation and card issuance are distributed.
 
 ```{python}
-non_transactional_w_cards_df = non_transactional_df[non_transactional_df['card_issued'].notna() & non_transactional_df['account_created'].notna()]
-non_transactional_w_cards_df['duration_days'] = (non_transactional_w_cards_df['card_issued'] - non_transactional_w_cards_df['account_created']).dt.days
+non_transactional_w_cards_df = non_transactional_df[
+    non_transactional_df["card_issued"].notna()
+    & non_transactional_df["account_created"].notna()
+]
+non_transactional_w_cards_df["duration_days"] = (
+    non_transactional_w_cards_df["card_issued"]
+    - non_transactional_w_cards_df["account_created"]
+).dt.days
 
 plt.figure(figsize=(12, 8))
-sns.histplot(non_transactional_w_cards_df['duration_days'], bins=50, edgecolor='black', kde=True)
-plt.title('Distribution of Duration Between Account Creation and Card Issuance')
-plt.xlabel('Duration in Days')
-plt.ylabel('Frequency')
+sns.histplot(
+    non_transactional_w_cards_df["duration_days"], bins=50, edgecolor="black", kde=True
+)
+plt.title("Distribution of Duration Between Account Creation and Card Issuance")
+plt.xlabel("Duration in Days")
+plt.ylabel("Frequency")
 plt.tight_layout()
 plt.show()
 ```
@@ -809,27 +1056,29 @@ The histogram displays a distribution with multiple peaks, indicating that there
 Analyzing the length of time a client has been with the bank in relation to their account creation date and card ownership can provide valuable insights for a bank's customer relationship management and product targeting strategies. Long-standing clients may exhibit different banking behaviors, such as product adoption and loyalty patterns, compared to newer clients.
 
 ```{python}
-max_account_creation_date = non_transactional_df['card_issued'].max()
+max_account_creation_date = non_transactional_df["card_issued"].max()
 
-non_transactional_df['client_tenure_years_relative'] = (max_account_creation_date - non_transactional_df['account_created']).dt.days / 365.25
+non_transactional_df["client_tenure_years_relative"] = (
+    max_account_creation_date - non_transactional_df["account_created"]
+).dt.days / 365.25
 
 plt.figure(figsize=(10, 6))
 ax = sns.histplot(
-    data=non_transactional_df, 
-    x='client_tenure_years_relative', 
-    hue='has_card', 
-    multiple='stack', 
+    data=non_transactional_df,
+    x="client_tenure_years_relative",
+    hue="has_card",
+    multiple="stack",
     binwidth=1,
-    stat="percent"
+    stat="percent",
 )
 
 # Call the function to add labels
-add_percentage_labels(ax, non_transactional_df['has_card'].unique())
+add_percentage_labels(ax, non_transactional_df["has_card"].unique())
 
 # Additional plot formatting
-plt.title('Client Tenure Relative to Latest Card Issued Date and Card Ownership')
-plt.xlabel('Client Tenure (Years, Relative to Latest Card Issuance)')
-plt.ylabel('Percentage of Clients')
+plt.title("Client Tenure Relative to Latest Card Issued Date and Card Ownership")
+plt.xlabel("Client Tenure (Years, Relative to Latest Card Issuance)")
+plt.ylabel("Percentage of Clients")
 plt.tight_layout()
 
 # Display the plot
@@ -844,11 +1093,11 @@ Using the available demographic data, we can investigate the potential correlati
 
 ```{python}
 plt.figure(figsize=(10, 6))
-sns.boxplot(x='has_card', y='client_average_salary', data=non_transactional_df)
+sns.boxplot(x="has_card", y="client_average_salary", data=non_transactional_df)
 plt.title("Average Salary in Client's Region by Card Ownership")
-plt.xlabel('Has Card')
-plt.ylabel('Average Salary')
-plt.xticks([0, 1], ['No Card Owner', 'Card Owner'])
+plt.xlabel("Has Card")
+plt.ylabel("Average Salary")
+plt.xticks([0, 1], ["No Card Owner", "Card Owner"])
 
 plt.tight_layout()
 plt.show()
@@ -863,37 +1112,49 @@ It should also be noted that this plot assumes that the average salary of the re
 The group of bar charts represents the distribution of credit card ownership across various demographics, showing the percentage of clients with and without cards within different age groups, sexes, and regions.
 
 ```{python}
-non_transactional_df['age_group'] = pd.cut(non_transactional_df['age'], bins=[0, 25, 40, 55, 70, 100], labels=['<25', '25-40', '40-55', '55-70', '>70'])
+non_transactional_df["age_group"] = pd.cut(
+    non_transactional_df["age"],
+    bins=[0, 25, 40, 55, 70, 100],
+    labels=["<25", "25-40", "40-55", "55-70", ">70"],
+)
 
 plt.figure(figsize=(15, 15))
 
 # Age Group
 plt.subplot(3, 1, 1)
-age_group_counts = non_transactional_df.groupby(['age_group', 'has_card']).size().unstack(fill_value=0)
+age_group_counts = (
+    non_transactional_df.groupby(["age_group", "has_card"]).size().unstack(fill_value=0)
+)
 age_group_percentages = (age_group_counts.T / age_group_counts.sum(axis=1)).T * 100
-age_group_plot = age_group_percentages.plot(kind='bar', stacked=True, ax=plt.gca())
-age_group_plot.set_title('Card Ownership by Age Group')
-age_group_plot.set_ylabel('Percentage')
-add_percentage_labels(age_group_plot, non_transactional_df['has_card'].unique())
+age_group_plot = age_group_percentages.plot(kind="bar", stacked=True, ax=plt.gca())
+age_group_plot.set_title("Card Ownership by Age Group")
+age_group_plot.set_ylabel("Percentage")
+add_percentage_labels(age_group_plot, non_transactional_df["has_card"].unique())
 
 # Sex
 plt.subplot(3, 1, 2)
-sex_counts = non_transactional_df.groupby(['sex', 'has_card']).size().unstack(fill_value=0)
+sex_counts = (
+    non_transactional_df.groupby(["sex", "has_card"]).size().unstack(fill_value=0)
+)
 sex_percentages = (sex_counts.T / sex_counts.sum(axis=1)).T * 100
-sex_plot = sex_percentages.plot(kind='bar', stacked=True, ax=plt.gca())
-sex_plot.set_title('Card Ownership by Sex')
-sex_plot.set_ylabel('Percentage')
-add_percentage_labels(sex_plot, non_transactional_df['has_card'].unique())
+sex_plot = sex_percentages.plot(kind="bar", stacked=True, ax=plt.gca())
+sex_plot.set_title("Card Ownership by Sex")
+sex_plot.set_ylabel("Percentage")
+add_percentage_labels(sex_plot, non_transactional_df["has_card"].unique())
 
 # Client Region
 plt.subplot(3, 1, 3)
-region_counts = non_transactional_df.groupby(['client_region', 'has_card']).size().unstack(fill_value=0)
+region_counts = (
+    non_transactional_df.groupby(["client_region", "has_card"])
+    .size()
+    .unstack(fill_value=0)
+)
 region_percentages = (region_counts.T / region_counts.sum(axis=1)).T * 100
-region_plot = region_percentages.plot(kind='bar', stacked=True, ax=plt.gca())
-region_plot.set_title('Card Ownership by Client Region')
-region_plot.set_ylabel('Percentage')
-region_plot.tick_params(axis='x', rotation=45)
-add_percentage_labels(region_plot, non_transactional_df['has_card'].unique())
+region_plot = region_percentages.plot(kind="bar", stacked=True, ax=plt.gca())
+region_plot.set_title("Card Ownership by Client Region")
+region_plot.set_ylabel("Percentage")
+region_plot.tick_params(axis="x", rotation=45)
+add_percentage_labels(region_plot, non_transactional_df["has_card"].unique())
 
 plt.tight_layout()
 plt.show()
@@ -913,21 +1174,32 @@ simplified_loan_status_mapping = {
     "Contract finished, loan not paid": "Not Paid",
     "Contract running, OK thus-far": "Running",
     "Contract running, client in debt": "In Debt",
-    "No Loan": "No Loan"
+    "No Loan": "No Loan",
 }
 
-non_transactional_df['loan_status_simplified'] = non_transactional_df['loan_status'].map(simplified_loan_status_mapping)
+non_transactional_df["loan_status_simplified"] = non_transactional_df[
+    "loan_status"
+].map(simplified_loan_status_mapping)
 
 ## this variable wants to kill itself
-loan_status_simplified_card_ownership_counts = non_transactional_df.groupby(['loan_status_simplified', 'has_card']).size().unstack(fill_value=0)
-loan_status_simplified_card_ownership_percentages = (loan_status_simplified_card_ownership_counts.T / loan_status_simplified_card_ownership_counts.sum(axis=1)).T * 100
+loan_status_simplified_card_ownership_counts = (
+    non_transactional_df.groupby(["loan_status_simplified", "has_card"])
+    .size()
+    .unstack(fill_value=0)
+)
+loan_status_simplified_card_ownership_percentages = (
+    loan_status_simplified_card_ownership_counts.T
+    / loan_status_simplified_card_ownership_counts.sum(axis=1)
+).T * 100
 
-loan_status_simplified_card_ownership_percentages.plot(kind='bar', stacked=True, figsize=(10, 6))
-plt.title('Interaction Between Simplified Loan Status and Card Ownership')
-plt.xlabel('Simplified Loan Status')
-plt.ylabel('Percentage of Clients')
+loan_status_simplified_card_ownership_percentages.plot(
+    kind="bar", stacked=True, figsize=(10, 6)
+)
+plt.title("Interaction Between Simplified Loan Status and Card Ownership")
+plt.xlabel("Simplified Loan Status")
+plt.ylabel("Percentage of Clients")
 plt.xticks(rotation=45)
-plt.legend(title='Has Card', labels=['No Card', 'Has Card'])
+plt.legend(title="Has Card", labels=["No Card", "Has Card"])
 plt.tight_layout()
 plt.show()
 ```
@@ -937,27 +1209,37 @@ plt.show()
 TODO: Add more EDA for transactional data
 
 ```{python}
-zero_amount_transactions_df = transactions_df[transactions_df['amount'] == 0]
+zero_amount_transactions_df = transactions_df[transactions_df["amount"] == 0]
 
 zero_amount_transactions_info = {
-    'total_zero_amount_transactions': len(zero_amount_transactions_df),
-    'unique_accounts_with_zero_amount': zero_amount_transactions_df['account_id'].nunique(),
-    'transaction_type_distribution': zero_amount_transactions_df['transaction_type'].value_counts(normalize=True),
-    'operation_distribution': zero_amount_transactions_df['operation'].value_counts(normalize=True),
-    'k_symbol_distribution': zero_amount_transactions_df['k_symbol'].value_counts(normalize=True)
+    "total_zero_amount_transactions": len(zero_amount_transactions_df),
+    "unique_accounts_with_zero_amount": zero_amount_transactions_df[
+        "account_id"
+    ].nunique(),
+    "transaction_type_distribution": zero_amount_transactions_df[
+        "transaction_type"
+    ].value_counts(normalize=True),
+    "operation_distribution": zero_amount_transactions_df["operation"].value_counts(
+        normalize=True
+    ),
+    "k_symbol_distribution": zero_amount_transactions_df["k_symbol"].value_counts(
+        normalize=True
+    ),
 }
 
 zero_amount_transactions_info, len(zero_amount_transactions_info)
 ```
 
 ```{python}
-accounts_with_zero_amount_transactions = accounts_df[accounts_df['account_id'].isin(zero_amount_transactions_df['account_id'].unique())]
+accounts_with_zero_amount_transactions = accounts_df[
+    accounts_df["account_id"].isin(zero_amount_transactions_df["account_id"].unique())
+]
 accounts_with_zero_amount_transactions
 ```
 
 ```{python}
 # Clean up unnecessary variables
-del accounts_with_zero_amount_transactions 
+del accounts_with_zero_amount_transactions
 del zero_amount_transactions_df
 del zero_amount_transactions_info
 ```
@@ -978,18 +1260,26 @@ def validate_first_transactions(transactions):
     - AssertionError: If not every account has a first transaction where the amount equals the balance.
     """
 
-    first_dates = transactions.groupby('account_id')['date'].min().reset_index(name='first_date')
+    first_dates = (
+        transactions.groupby("account_id")["date"].min().reset_index(name="first_date")
+    )
 
-    first_trans = pd.merge(transactions, first_dates, how='left', on=['account_id'])
+    first_trans = pd.merge(transactions, first_dates, how="left", on=["account_id"])
 
-    first_trans_filtered = first_trans[(first_trans['date'] == first_trans['first_date']) & (first_trans['amount'] == first_trans['balance'])]
+    first_trans_filtered = first_trans[
+        (first_trans["date"] == first_trans["first_date"])
+        & (first_trans["amount"] == first_trans["balance"])
+    ]
 
-    first_trans_filtered = first_trans_filtered.drop_duplicates(subset=['account_id'])
+    first_trans_filtered = first_trans_filtered.drop_duplicates(subset=["account_id"])
 
-    unique_accounts = transactions['account_id'].nunique()
-    assert unique_accounts == first_trans_filtered['account_id'].nunique(), "Not every account has a first transaction where the amount equals the balance."
+    unique_accounts = transactions["account_id"].nunique()
+    assert (
+        unique_accounts == first_trans_filtered["account_id"].nunique()
+    ), "Not every account has a first transaction where the amount equals the balance."
 
     return "Validation successful: Each account has a first transaction where the amount equals the balance."
+
 
 validate_first_transactions(transactions_df)
 ```
@@ -997,39 +1287,69 @@ validate_first_transactions(transactions_df)
 We can confirm the truth of the assertions made. It is certain that there is a transaction with an amount equal to the balance in the transaction history of any account on the first date.
 
 # Data Preparation: Transactional Data
+
 ## Set artificial issue date for non-card holders
 
 ```{python}
 def add_months_since_account_to_card(df):
-    df['months_since_account_to_card'] = df.apply(
-        lambda row: (row['card_issued'].to_period('M') - row['account_created'].to_period('M')).n
-        if pd.notnull(row['card_issued']) and pd.notnull(row['account_created']) else np.nan, axis=1)
+    df["months_since_account_to_card"] = df.apply(
+        lambda row: (
+            (
+                row["card_issued"].to_period("M")
+                - row["account_created"].to_period("M")
+            ).n
+            if pd.notnull(row["card_issued"]) and pd.notnull(row["account_created"])
+            else np.nan
+        ),
+        axis=1,
+    )
     return df
 
-def filter_clients_without_sufficient_history(non_transactional_df, min_history_months=25):
-    if 'months_since_account_to_card' not in non_transactional_df.columns:
-        print("Warning: months_since_account_to_card column not found. Calculating history length.")
+
+def filter_clients_without_sufficient_history(
+    non_transactional_df, min_history_months=25
+):
+    if "months_since_account_to_card" not in non_transactional_df.columns:
+        print(
+            "Warning: months_since_account_to_card column not found. Calculating history length."
+        )
         non_transactional_df = add_months_since_account_to_card(non_transactional_df)
 
     count_before = len(non_transactional_df)
-    filtered_df = non_transactional_df[non_transactional_df['months_since_account_to_card'].isnull() | (non_transactional_df['months_since_account_to_card'] >= min_history_months)]
-    print(f"Filtered out {count_before - len(filtered_df)} records with less than {min_history_months} months of history. Percentage: {(count_before - len(filtered_df)) / count_before * 100:.2f}%.")
+    filtered_df = non_transactional_df[
+        non_transactional_df["months_since_account_to_card"].isnull()
+        | (non_transactional_df["months_since_account_to_card"] >= min_history_months)
+    ]
+    print(
+        f"Filtered out {count_before - len(filtered_df)} records with less than {min_history_months} months of history. Percentage: {(count_before - len(filtered_df)) / count_before * 100:.2f}%."
+    )
     return filtered_df
 
+
 before_len = len(non_transactional_df)
-non_transactional_w_sufficient_history_df = filter_clients_without_sufficient_history(non_transactional_df)
-data_reduction["Clients without sufficient history"] = -(before_len - len(non_transactional_w_sufficient_history_df))
+non_transactional_w_sufficient_history_df = filter_clients_without_sufficient_history(
+    non_transactional_df
+)
+data_reduction["Clients without sufficient history"] = -(
+    before_len - len(non_transactional_w_sufficient_history_df)
+)
 del before_len
 ```
 
 ```{python}
-non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(subset=['card_issued']).copy()
+non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(
+    subset=["card_issued"]
+).copy()
 
 plt.figure(figsize=(12, 8))
-sns.histplot(non_transactional_w_card_df['months_since_account_to_card'], kde=True, bins=30)
-plt.title('Distribution of Months from Account Creation to Card Issuance (for Card Holders)')
-plt.xlabel('Months')
-plt.ylabel('Count')
+sns.histplot(
+    non_transactional_w_card_df["months_since_account_to_card"], kde=True, bins=30
+)
+plt.title(
+    "Distribution of Months from Account Creation to Card Issuance (for Card Holders)"
+)
+plt.xlabel("Months")
+plt.ylabel("Count")
 plt.grid(True)
 plt.tight_layout()
 plt.show()
@@ -1039,7 +1359,7 @@ plt.show()
 
 The following approaches were considered to match non-card holders with card holders:
 
-1. Looking at the distributions above extract the amount of history a buyer most likely has at the issue data of the card 
+1. Looking at the distributions above extract the amount of history a buyer most likely has at the issue data of the card
 2. For each non buyer, find a buyer which was active in a similar time window (Jaccard similarity on the Year-Month sets). Instead of looking at the full activity of a buyer, we only look at the pre-purchase activity as there is reason to believe that clients may change their patterns after purchasing date and therefore add unwanted bias.
 
 The second approach is chosen as it is provides an intuitive way to match clients based on their activity which is not only explainable but also provides a way to match clients based on their behavior. It strikes a balance of not finding a perfect match but a good enough match to focus on the discriminative features of the data.
@@ -1069,13 +1389,13 @@ The activity matrix serves as the foundation of our matching process, mapping ou
 
 The heatmap provided offers a visual representation of the activity matrix for clients, depicting the levels of engagement over various periods.
 
--   **Diagonal Trend**: There is a distinct diagonal pattern, indicating that newer accounts (those created more recently) have fewer periods of activity. This makes sense as these accounts have not had the opportunity to transact over the earlier periods displayed on the heatmap.
+- **Diagonal Trend**: There is a distinct diagonal pattern, indicating that newer accounts (those created more recently) have fewer periods of activity. This makes sense as these accounts have not had the opportunity to transact over the earlier periods displayed on the heatmap.
 
--   **Darker Areas (Purple)**: These represent periods of inactivity where clients did not engage. The darker the shade, the less activity occurred in that particular period for the corresponding set of accounts.
+- **Darker Areas (Purple)**: These represent periods of inactivity where clients did not engage. The darker the shade, the less activity occurred in that particular period for the corresponding set of accounts.
 
--   **Brighter Areas (Yellow)**: In contrast, the brighter areas denote periods of activity. A brighter shade implies more clients were active during that period.
+- **Brighter Areas (Yellow)**: In contrast, the brighter areas denote periods of activity. A brighter shade implies more clients were active during that period.
 
--   **Account Creation Date**: Clients are sorted by their account creation date. Those who joined earlier are at the top, while more recent clients appear toward the bottom of the heatmap.
+- **Account Creation Date**: Clients are sorted by their account creation date. Those who joined earlier are at the top, while more recent clients appear toward the bottom of the heatmap.
 
 ```{python}
 def prepare_activity_matrix(transactions):
@@ -1091,31 +1411,33 @@ def prepare_activity_matrix(transactions):
     Returns:
     - pd.DataFrame: An activity matrix with accounts as rows and months as columns.
     """
-    transactions['month_year'] = transactions['date'].dt.to_period('M')
-    transactions['active'] = 1
-    
-    activity_matrix = transactions.pivot_table(index='account_id', 
-                                    columns='month_year', 
-                                    values='active', 
-                                    fill_value=0)
-    
-    activity_matrix.columns = [f'active_{str(col)}' for col in activity_matrix.columns]
+    transactions["month_year"] = transactions["date"].dt.to_period("M")
+    transactions["active"] = 1
+
+    activity_matrix = transactions.pivot_table(
+        index="account_id", columns="month_year", values="active", fill_value=0
+    )
+
+    activity_matrix.columns = [f"active_{str(col)}" for col in activity_matrix.columns]
     return activity_matrix
 
+
 def plot_activity_matrix(activity_matrix):
-    sparse_matrix = activity_matrix.astype(bool)    
+    sparse_matrix = activity_matrix.astype(bool)
     plt.figure(figsize=(20, 10))
-    sns.heatmap(sparse_matrix, cmap='viridis', cbar=True, yticklabels=False)
-    plt.title(f'Activity Matrix across all clients sorted by account creation date')
-    plt.xlabel('Period')
-    plt.ylabel('Accounts')
+    sns.heatmap(sparse_matrix, cmap="viridis", cbar=True, yticklabels=False)
+    plt.title(f"Activity Matrix across all clients sorted by account creation date")
+    plt.xlabel("Period")
+    plt.ylabel("Accounts")
     plt.show()
+
 
 activity_matrix = prepare_activity_matrix(transactions_df)
 plot_activity_matrix(activity_matrix)
 ```
 
 ### Eligibility Criteria
+
 After constructing the activity matrix, we check for eligibility of non-cardholders to be matched with cardholders. This ensures alignment for later model construction. The eligibility criteria are as follows:
 
 1.  **Account History**: Non-cardholders must have an established history of interaction, with at least 25 months of history between account creation and card issuance (12 months (= New customer period) + 13 months (= one year of history) + 1 month (Lag period)).
@@ -1126,6 +1448,7 @@ from sklearn.metrics import pairwise_distances
 from tqdm import tqdm
 
 ELIGIBILITY_THRESHOLD_HIST_MONTHS = 25
+
 
 def check_eligibility_for_matching(non_cardholder, cardholder, verbose=False):
     """
@@ -1142,18 +1465,24 @@ def check_eligibility_for_matching(non_cardholder, cardholder, verbose=False):
     Returns:
     - bool: True if the non-cardholder is eligible for matching, False otherwise.
     """
-    if cardholder['card_issued'] <= non_cardholder['account_created']:
-        return False    
+    if cardholder["card_issued"] <= non_cardholder["account_created"]:
+        return False
 
-    period_diff = (cardholder['card_issued'].to_period('M') - non_cardholder['account_created'].to_period('M')).n
+    period_diff = (
+        cardholder["card_issued"].to_period("M")
+        - non_cardholder["account_created"].to_period("M")
+    ).n
 
     if verbose:
-        print(f"Card issued: {cardholder['card_issued']}, Account created: {non_cardholder['account_created']}, Period diff: {period_diff}, Eligible: {period_diff >= ELIGIBILITY_THRESHOLD_HIST_MONTHS}")
+        print(
+            f"Card issued: {cardholder['card_issued']}, Account created: {non_cardholder['account_created']}, Period diff: {period_diff}, Eligible: {period_diff >= ELIGIBILITY_THRESHOLD_HIST_MONTHS}"
+        )
 
     return period_diff >= ELIGIBILITY_THRESHOLD_HIST_MONTHS
 ```
 
 ### Matching Process
+
 Next up we will implement the matching process. Our matching utilizes the Jaccard similarity index to compare activity patterns: We compare a vector representing an existing cardholder's monthly activity against a matrix of non-cardholders' activity patterns. Here we only consider the activity from the first transaction period across all customers to the card issue date.
 
 The Jaccard similarity index is calculated as the intersection of active months divided by the union of active months between the two clients. This index ranges from 0 to 1, with higher values indicating greater similarity in activity patterns.
@@ -1161,6 +1490,7 @@ The Jaccard similarity index is calculated as the intersection of active months 
 $$J(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
 
 The function `match_cardholders_with_non_cardholders` will perform the following steps:
+
 1. **Data Preparation**: The function prepares the activity matrix and splits the non-cardholders into two groups: those with and without cards.
 2. **Matching Process**: For each cardholder, the function calculates the Jaccard similarity between their activity pattern and those of eligible non-cardholders. It then selects the top N similar non-cardholders and randomly assigns one match per cardholder.
 3. **Match Selection**: The function selects a non-cardholder match for each cardholder based on the Jaccard similarity scores. It ensures that each non-cardholder is matched only once and that the top N similar non-cardholders are considered for matching.
@@ -1170,7 +1500,15 @@ The function `match_cardholders_with_non_cardholders` will perform the following
 4. **Output**: The function returns a list of tuples containing the matched cardholder and non-cardholder client IDs along with their similarity scores.
 
 ```{python}
-def select_non_cardholders(distances, eligible_non_cardholders, matches, matched_applicants, cardholder, without_card_activity, top_n):
+def select_non_cardholders(
+    distances,
+    eligible_non_cardholders,
+    matches,
+    matched_applicants,
+    cardholder,
+    without_card_activity,
+    top_n,
+):
     """
     Randomly select a non-cardholder match for a cardholder from the top N eligible candidates.
 
@@ -1197,8 +1535,11 @@ def select_non_cardholders(distances, eligible_non_cardholders, matches, matched
             matched_applicants.add(actual_selected_index)
             applicant = without_card_activity.iloc[actual_selected_index]
             similarity = 1 - eligible_distances[selected_index]
-            
-            matches.append((cardholder['client_id'], applicant['client_id'], similarity))
+
+            matches.append(
+                (cardholder["client_id"], applicant["client_id"], similarity)
+            )
+
 
 def match_cardholders_with_non_cardholders(non_transactional, transactions, top_n=5):
     """
@@ -1216,38 +1557,72 @@ def match_cardholders_with_non_cardholders(non_transactional, transactions, top_
     Returns:
     - list: A list of tuples with the cardholder and matched non-cardholder client IDs and similarity scores.
     """
-    with_card = non_transactional[non_transactional['card_issued'].notna()]
-    without_card = non_transactional[non_transactional['card_issued'].isna()]
+    with_card = non_transactional[non_transactional["card_issued"].notna()]
+    without_card = non_transactional[non_transactional["card_issued"].isna()]
 
     activity_matrix = prepare_activity_matrix(transactions)
-    
-    with_card_activity = with_card.join(activity_matrix, on='account_id', how='left')
-    without_card_activity = without_card.join(activity_matrix, on='account_id', how='left')
+
+    with_card_activity = with_card.join(activity_matrix, on="account_id", how="left")
+    without_card_activity = without_card.join(
+        activity_matrix, on="account_id", how="left"
+    )
 
     matched_non_cardholders = set()
     matches = []
 
-    for idx, cardholder in tqdm(with_card_activity.iterrows(), total=len(with_card_activity), desc='Matching cardholders'):
-        issue_period = cardholder['card_issued'].to_period('M')
-        eligible_cols = [col for col in activity_matrix if col.startswith('active') and pd.Period(col.split('_')[1]) <= issue_period]
+    for idx, cardholder in tqdm(
+        with_card_activity.iterrows(),
+        total=len(with_card_activity),
+        desc="Matching cardholders",
+    ):
+        issue_period = cardholder["card_issued"].to_period("M")
+        eligible_cols = [
+            col
+            for col in activity_matrix
+            if col.startswith("active") and pd.Period(col.split("_")[1]) <= issue_period
+        ]
 
         if not eligible_cols:
-            print(f"No eligible months found for cardholder client_id {cardholder['client_id']}.")
+            print(
+                f"No eligible months found for cardholder client_id {cardholder['client_id']}."
+            )
             continue
 
-        cardholder_vector = cardholder[eligible_cols].fillna(0).astype(bool).values.reshape(1, -1)
-        non_cardholder__matrix = without_card_activity[eligible_cols].fillna(0).astype(bool).values        
-        assert cardholder_vector.shape[1] == non_cardholder__matrix.shape[1], "Dimension mismatch between cardholder and applicant activity matrix."
+        cardholder_vector = (
+            cardholder[eligible_cols].fillna(0).astype(bool).values.reshape(1, -1)
+        )
+        non_cardholder__matrix = (
+            without_card_activity[eligible_cols].fillna(0).astype(bool).values
+        )
+        assert (
+            cardholder_vector.shape[1] == non_cardholder__matrix.shape[1]
+        ), "Dimension mismatch between cardholder and applicant activity matrix."
 
-        distances = pairwise_distances(cardholder_vector, non_cardholder__matrix, metric='jaccard').flatten()
-        eligible_non_cardholders = [i for i, applicant in without_card_activity.iterrows()
-                                    if check_eligibility_for_matching(applicant, cardholder) and i not in matched_non_cardholders]
+        distances = pairwise_distances(
+            cardholder_vector, non_cardholder__matrix, metric="jaccard"
+        ).flatten()
+        eligible_non_cardholders = [
+            i
+            for i, applicant in without_card_activity.iterrows()
+            if check_eligibility_for_matching(applicant, cardholder)
+            and i not in matched_non_cardholders
+        ]
 
         if eligible_non_cardholders:
-            select_non_cardholders(distances, eligible_non_cardholders, matches, matched_non_cardholders, cardholder, without_card_activity, top_n)
+            select_non_cardholders(
+                distances,
+                eligible_non_cardholders,
+                matches,
+                matched_non_cardholders,
+                cardholder,
+                without_card_activity,
+                top_n,
+            )
         else:
-            print(f"No eligible non-cardholders found for cardholder client_id {cardholder['client_id']}.")
-            
+            print(
+                f"No eligible non-cardholders found for cardholder client_id {cardholder['client_id']}."
+            )
+
     return matches
 ```
 
@@ -1273,19 +1648,32 @@ def set_artificial_issue_dates(non_transactional_df, matches):
     - pd.DataFrame: The augmented DataFrame with artificial card issue dates.
     """
     augmented_df = non_transactional_df.copy()
-    augmented_df['has_card'] = True
+    augmented_df["has_card"] = True
 
     for cardholder_id, non_cardholder_id, _ in matches:
-        card_issue_date = augmented_df.loc[augmented_df['client_id'] == cardholder_id, 'card_issued'].values[0]
-        augmented_df.loc[augmented_df['client_id'] == non_cardholder_id, ['card_issued', 'has_card']] = [card_issue_date, False]
+        card_issue_date = augmented_df.loc[
+            augmented_df["client_id"] == cardholder_id, "card_issued"
+        ].values[0]
+        augmented_df.loc[
+            augmented_df["client_id"] == non_cardholder_id, ["card_issued", "has_card"]
+        ] = [card_issue_date, False]
 
     return augmented_df
 
-matched_non_card_holders_df = match_cardholders_with_non_cardholders(non_transactional_w_sufficient_history_df, transactions_df)
 
-print(f"Percentage of clients with card issued: {non_transactional_w_sufficient_history_df['card_issued'].notna().mean() * 100:.2f}%")
-matched_non_card_holders_w_issue_date_df = set_artificial_issue_dates(non_transactional_w_sufficient_history_df, matched_non_card_holders_df)
-print(f"Percentage of clients with card issued after matching: {matched_non_card_holders_w_issue_date_df['card_issued'].notna().mean() * 100:.2f}%")
+matched_non_card_holders_df = match_cardholders_with_non_cardholders(
+    non_transactional_w_sufficient_history_df, transactions_df
+)
+
+print(
+    f"Percentage of clients with card issued: {non_transactional_w_sufficient_history_df['card_issued'].notna().mean() * 100:.2f}%"
+)
+matched_non_card_holders_w_issue_date_df = set_artificial_issue_dates(
+    non_transactional_w_sufficient_history_df, matched_non_card_holders_df
+)
+print(
+    f"Percentage of clients with card issued after matching: {matched_non_card_holders_w_issue_date_df['card_issued'].notna().mean() * 100:.2f}%"
+)
 ```
 
 After each non-cardholder got the artifical card issued date assigned we drop the remaining non-cardholders without a match.
@@ -1293,8 +1681,12 @@ After each non-cardholder got the artifical card issued date assigned we drop th
 ```{python}
 before_len = len(matched_non_card_holders_w_issue_date_df)
 print(-(before_len - len(matched_non_card_holders_w_issue_date_df)))
-matched_non_card_holders_w_issue_date_df = matched_non_card_holders_w_issue_date_df.dropna(subset=['card_issued'])
-data_reduction["Non-cardholders without match"] = -(before_len - len(matched_non_card_holders_w_issue_date_df))
+matched_non_card_holders_w_issue_date_df = (
+    matched_non_card_holders_w_issue_date_df.dropna(subset=["card_issued"])
+)
+data_reduction["Non-cardholders without match"] = -(
+    before_len - len(matched_non_card_holders_w_issue_date_df)
+)
 del before_len
 ```
 
@@ -1310,12 +1702,12 @@ The function `aggregate_transactions_monthly` is designed to process and summari
 
 3.  **Aggregation of Monthly Data**: The function groups the sorted transactions by `account_id` and the newly created `month` column. For each group, it calculates several metrics:
 
-    -   `volume`: The sum of all transactions' amounts for the month, representing the total money flow.
-    -   `total_abs_amount`: The sum of the absolute values of the transactions' amounts, indicating the total amount of money moved, disregarding the direction.
-    -   `transaction_count`: The count of transactions, providing a sense of activity level.
-    -   `positive_transaction_count` and `negative_transaction_count`: The counts of positive (inflows) and negative (outflows) transactions, respectively. This distinction can help identify the balance between income and expenses.
-    -   Statistical measures like `average_amount`, `median_amount`, `min_amount`, `max_amount`, and `std_amount` offer insights into the distribution of transaction amounts.
-    -   `type_count`, `operation_count`, and `k_symbol_count`: The counts of unique transaction types, operations, and transaction symbols (k_symbol), respectively, indicating the diversity of transaction characteristics.
+    - `volume`: The sum of all transactions' amounts for the month, representing the total money flow.
+    - `total_abs_amount`: The sum of the absolute values of the transactions' amounts, indicating the total amount of money moved, disregarding the direction.
+    - `transaction_count`: The count of transactions, providing a sense of activity level.
+    - `positive_transaction_count` and `negative_transaction_count`: The counts of positive (inflows) and negative (outflows) transactions, respectively. This distinction can help identify the balance between income and expenses.
+    - Statistical measures like `average_amount`, `median_amount`, `min_amount`, `max_amount`, and `std_amount` offer insights into the distribution of transaction amounts.
+    - `type_count`, `operation_count`, and `k_symbol_count`: The counts of unique transaction types, operations, and transaction symbols (k_symbol), respectively, indicating the diversity of transaction characteristics.
 
 4.  **Cumulative Balance Calculation**: After aggregating the monthly data, the function computes a cumulative balance (`balance`) for each account by cumulatively summing the `volume` (total transaction amount) over time. This step provides insight into how the account balance evolves over the months.
 
@@ -1338,28 +1730,34 @@ def aggregate_transactions_monthly(df):
     df_sorted["month"] = df_sorted["date"].dt.to_period("M")
 
     monthly_aggregated_data = (
-            df_sorted.groupby(["account_id", "month"])
-            .agg(
-                volume=("amount", "sum"),
-                total_abs_amount=("amount", lambda x: x.abs().sum()),
-                transaction_count=("amount", "count"),
-                positive_transaction_count=("amount", lambda x: (x >= 0).sum()), # TODO: it seems that there are some transactions with 0 amount, how to handle those?
-                negative_transaction_count=("amount", lambda x: (x < 0).sum()),
-                average_amount=("amount", "mean"),
-                median_amount=("amount", "median"),
-                min_amount=("amount", "min"),
-                max_amount=("amount", "max"),
-                std_amount=("amount", "std"),
-                type_count=("transaction_type", "nunique"),
-                operation_count=("operation", "nunique"),
-                k_symbol_count=("k_symbol", "nunique"),
-            )
-            .reset_index()
-            .sort_values(by=["account_id", "month"])
+        df_sorted.groupby(["account_id", "month"])
+        .agg(
+            volume=("amount", "sum"),
+            total_abs_amount=("amount", lambda x: x.abs().sum()),
+            transaction_count=("amount", "count"),
+            positive_transaction_count=(
+                "amount",
+                lambda x: (x >= 0).sum(),
+            ),  # TODO: it seems that there are some transactions with 0 amount, how to handle those?
+            negative_transaction_count=("amount", lambda x: (x < 0).sum()),
+            average_amount=("amount", "mean"),
+            median_amount=("amount", "median"),
+            min_amount=("amount", "min"),
+            max_amount=("amount", "max"),
+            std_amount=("amount", "std"),
+            type_count=("transaction_type", "nunique"),
+            operation_count=("operation", "nunique"),
+            k_symbol_count=("k_symbol", "nunique"),
         )
+        .reset_index()
+        .sort_values(by=["account_id", "month"])
+    )
 
-    monthly_aggregated_data["balance"] = monthly_aggregated_data.groupby("account_id")["volume"].cumsum()
+    monthly_aggregated_data["balance"] = monthly_aggregated_data.groupby("account_id")[
+        "volume"
+    ].cumsum()
     return monthly_aggregated_data
+
 
 agg_transactions_monthly_df = aggregate_transactions_monthly(transactions_df)
 agg_transactions_monthly_df.to_csv("./data/agg_transactions_monthly.csv", index=False)
@@ -1367,11 +1765,12 @@ agg_transactions_monthly_df.describe()
 ```
 
 The `validate_monthly_aggregated_transactions` function is invoked to ensure the integrity and correctness of the aggregated data through several assertions:
--   The balance should consistently increase or decrease based on whether the total monthly transaction volume is positive or negative, respectively.
--   For each account, the balance in the first month should equal the total transaction volume of that month.
--   The sum of positive and negative transaction counts must equal the total transaction count for each month.
--   The number of unique accounts in the aggregated data should match that in the original dataset.
--   The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset.
+
+- The balance should consistently increase or decrease based on whether the total monthly transaction volume is positive or negative, respectively.
+- For each account, the balance in the first month should equal the total transaction volume of that month.
+- The sum of positive and negative transaction counts must equal the total transaction count for each month.
+- The number of unique accounts in the aggregated data should match that in the original dataset.
+- The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset.
 
 ```{python}
 def validate_monthly_aggregated_transactions(aggregated_data, original_df):
@@ -1385,7 +1784,7 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
     Raises:
     - AssertionError: If validation conditions are not met.
     """
-    
+
     assert (aggregated_data["volume"] >= 0).all() == (
         aggregated_data["balance"].diff() >= 0
     ).all(), "If the total amount is positive, the balance should go up."
@@ -1404,7 +1803,7 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
         + aggregated_data["negative_transaction_count"]
         == aggregated_data["transaction_count"]
     ).all(), "The sum of positive and negative transaction counts should equal the total transaction count."
-    
+
     assert (
         aggregated_data["account_id"].nunique() == original_df["account_id"].nunique()
     ), "The number of unique account_ids in the aggregated DataFrame should be the same as the original DataFrame."
@@ -1414,9 +1813,10 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
             aggregated_data.groupby("account_id")
             .last()
             .reset_index()[["account_id", "balance"]],
-            original_df[original_df.groupby("account_id")["date"].transform("max") == original_df["date"]][
-                ["account_id", "balance"]
-            ],
+            original_df[
+                original_df.groupby("account_id")["date"].transform("max")
+                == original_df["date"]
+            ][["account_id", "balance"]],
             on="account_id",
             suffixes=("_final", "_last"),
         )
@@ -1425,6 +1825,7 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
         )
         .any()
     ), "Some accounts' final balances do not match their last transactions."
+
 
 validate_monthly_aggregated_transactions(agg_transactions_monthly_df, transactions_df)
 ```
@@ -1440,52 +1841,83 @@ This plot gives a clear picture of how money moves in and out of an account each
 **What to Look For**: - A direct link between the amount of money moved (volume) and changes in the account balance. High incoming money should lead to an uptick in the balance, and lots of outgoing money should lead to a downturn. - This visual check helps to understand how active the account is and whether it’s generally getting fuller or emptier over time.
 
 ```{python}
-def plot_monthly_balance_diff_and_volume(transactions_monthly, account_id, figsize=(12, 8)):
-    account_transactions = transactions_monthly[transactions_monthly['account_id'] == account_id].sort_values(by='month')
-    account_transactions['balance_diff'] = account_transactions['balance'].diff()
+def plot_monthly_balance_diff_and_volume(
+    transactions_monthly, account_id, figsize=(12, 8)
+):
+    account_transactions = transactions_monthly[
+        transactions_monthly["account_id"] == account_id
+    ].sort_values(by="month")
+    account_transactions["balance_diff"] = account_transactions["balance"].diff()
 
     plt.figure(figsize=figsize)
 
-    plt.plot(account_transactions['month'].astype(str), account_transactions['balance_diff'], marker='o', label='Balance Difference')
-    plt.plot(account_transactions['month'].astype(str), account_transactions['volume'], marker='x', linestyle='--', label='Volume')
+    plt.plot(
+        account_transactions["month"].astype(str),
+        account_transactions["balance_diff"],
+        marker="o",
+        label="Balance Difference",
+    )
+    plt.plot(
+        account_transactions["month"].astype(str),
+        account_transactions["volume"],
+        marker="x",
+        linestyle="--",
+        label="Volume",
+    )
 
-    plt.title(f'Monthly Balance Difference and Volume for Account {account_id}')
-    plt.xlabel('Month')
-    plt.ylabel('Value')
+    plt.title(f"Monthly Balance Difference and Volume for Account {account_id}")
+    plt.xlabel("Month")
+    plt.ylabel("Value")
     plt.xticks(rotation=45)
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
+
 plot_monthly_balance_diff_and_volume(agg_transactions_monthly_df, 2)
 ```
 
 ## Monthly Transactions, Balance, and Volume Plot Explanation
+
 This visualization offers a snapshot of an account’s activity over time by comparing money movement each month with the overall account balance. It helps to understand:
 
--   **Volume**: How much money came in or went out of the account each month. Incoming money is shown as up, and outgoing money as down.
--   **Balance**: The total money in the account at the end of each month, showing how it's changed over time due to the monthly transactions.
+- **Volume**: How much money came in or went out of the account each month. Incoming money is shown as up, and outgoing money as down.
+- **Balance**: The total money in the account at the end of each month, showing how it's changed over time due to the monthly transactions.
 
 **What to Look For**: - How the monthly money movement impacts the account's growing or shrinking balance. For example, a few months of high income should visibly increase the balance. - This simple visual guide helps spot trends, like if the account is steadily growing, holding steady, or facing issues, giving quick insights into financial well-being and further validates the aggregation made in the previous step.
 
 ```{python}
 def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, account_id):
-    account_transactions = agg_transactions_monthly[agg_transactions_monthly['account_id'] == account_id]
+    account_transactions = agg_transactions_monthly[
+        agg_transactions_monthly["account_id"] == account_id
+    ]
 
     plt.figure(figsize=(15, 10))
 
-    plt.plot(account_transactions['month'].astype(str), account_transactions['volume'], marker='o', label='Volume')
-    plt.plot(account_transactions['month'].astype(str), account_transactions['balance'], marker='x', linestyle='--', label='Balance')
+    plt.plot(
+        account_transactions["month"].astype(str),
+        account_transactions["volume"],
+        marker="o",
+        label="Volume",
+    )
+    plt.plot(
+        account_transactions["month"].astype(str),
+        account_transactions["balance"],
+        marker="x",
+        linestyle="--",
+        label="Balance",
+    )
 
-    plt.title(f'Monthly Transactions and Balance for Account {account_id}')
-    plt.xlabel('Month')
-    plt.ylabel('Value')
+    plt.title(f"Monthly Transactions and Balance for Account {account_id}")
+    plt.xlabel("Month")
+    plt.ylabel("Value")
     plt.xticks(rotation=60)
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
 
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 2)
 ```
@@ -1508,23 +1940,25 @@ Account 18 paints a different picture in comparison to account 14.
 
 The volatility here is a lot higher, indiciating a potential for a business account or high income household. Especially March 1994 to December 1994 show some volatile transaction habits.
 
-
 Looking at the balance and volume per month for the accounts 14 and 18 we can notice some interesting patterns.
 
 TODO: Add analysis
 
 # Pivot Transactions: Rolling Up to Monthly Aggregates
+
 We have condensed transaction data into a monthly aggregated format. This aggregation serves a multifaceted purpose:
 
--   Monthly aggregation standardizes the time frame across which we analyze transactions, allowing us to compare transactional behaviors consistently across all accounts.
--   Aggregating data on a monthly level illuminates patterns that daily data might obscure. It enables us to discern trends over a broader time scale, capturing cyclical behaviors, seasonal effects, and response to macroeconomic events.
--   Daily transaction data can be "noisy" with random fluctuations. By considering monthly totals and averages, we reduce this noise, revealing underlying trends more clearly.
--   Our primary objective is to understand behaviors leading up to the issuance of a card. Aggregating transactions on a monthly basis helps focus on the crucial period preceding card issuance, enabling us to correlate transactional behaviors with the propensity to become a cardholder.
+- Monthly aggregation standardizes the time frame across which we analyze transactions, allowing us to compare transactional behaviors consistently across all accounts.
+- Aggregating data on a monthly level illuminates patterns that daily data might obscure. It enables us to discern trends over a broader time scale, capturing cyclical behaviors, seasonal effects, and response to macroeconomic events.
+- Daily transaction data can be "noisy" with random fluctuations. By considering monthly totals and averages, we reduce this noise, revealing underlying trends more clearly.
+- Our primary objective is to understand behaviors leading up to the issuance of a card. Aggregating transactions on a monthly basis helps focus on the crucial period preceding card issuance, enabling us to correlate transactional behaviors with the propensity to become a cardholder.
 
 ```{python}
-def pivot_transactions(non_transactional, transactions_monthly, months_before_card_range=(2, 13)):
+def pivot_transactions(
+    non_transactional, transactions_monthly, months_before_card_range=(2, 13)
+):
     """
-    Aggregate monthly transaction data and merge it with non-transactional account data, 
+    Aggregate monthly transaction data and merge it with non-transactional account data,
     focusing on the time frame leading up to the card issuance.
 
     This function merges monthly transaction data with non-transactional data to associate each
@@ -1534,66 +1968,91 @@ def pivot_transactions(non_transactional, transactions_monthly, months_before_ca
     Parameters:
     - non_transactional (pd.DataFrame): A DataFrame containing non-transactional account data. This is only used to map card issuance dates to transactions.
     - transactions_monthly (pd.DataFrame): A DataFrame containing monthly transaction data.
-    - months_before_card_range (tuple): A tuple specifying the inclusive range of months before card 
+    - months_before_card_range (tuple): A tuple specifying the inclusive range of months before card
                                         issuance to filter the transactions for aggregation.
 
     The aggregation includes the sum of volume and transaction counts, as well as the mean and other
-    statistical measures of transaction amounts, for each account within the specified months before 
+    statistical measures of transaction amounts, for each account within the specified months before
     card issuance.
 
-    The resulting DataFrame is pivoted to have 'account_id' as rows and the months before card 
-    issuance as columns, with aggregated metrics as values. Column names are constructed to 
+    The resulting DataFrame is pivoted to have 'account_id' as rows and the months before card
+    issuance as columns, with aggregated metrics as values. Column names are constructed to
     describe the month and the metric represented.
 
     Returns:
-    - pd.DataFrame: The final aggregated and pivoted dataset ready for analysis, with each row 
-                    representing an account and each column a specific metric in the months before 
+    - pd.DataFrame: The final aggregated and pivoted dataset ready for analysis, with each row
+                    representing an account and each column a specific metric in the months before
                     card issuance.
     """
-    merged_df = transactions_monthly.merge(non_transactional[['account_id']], on='account_id')
+    merged_df = transactions_monthly.merge(
+        non_transactional[["account_id"]], on="account_id"
+    )
 
-    merged_df['card_issued_date'] = merged_df['account_id'].map(non_transactional.set_index('account_id')['card_issued'])
-    merged_df['months_before_card'] = merged_df.apply(lambda row: (row['card_issued_date'].to_period('M') - row['month']).n, axis=1)
+    merged_df["card_issued_date"] = merged_df["account_id"].map(
+        non_transactional.set_index("account_id")["card_issued"]
+    )
+    merged_df["months_before_card"] = merged_df.apply(
+        lambda row: (row["card_issued_date"].to_period("M") - row["month"]).n, axis=1
+    )
 
     start_month, end_month = months_before_card_range
     filtered_df = merged_df.query(f"{start_month} <= months_before_card <= {end_month}")
-    
-    aggregated_data = filtered_df.groupby(['account_id', 'months_before_card']).agg({
-        'volume': 'sum',
-        'total_abs_amount': 'sum',
-        'transaction_count': 'sum',
-        'positive_transaction_count': 'sum',
-        'negative_transaction_count': 'sum',
-        'average_amount': 'mean',
-        'median_amount': 'median',
-        'min_amount': 'min',
-        'max_amount': 'max',
-        'std_amount': 'std',
-        'type_count': 'sum',
-        'operation_count': 'sum',
-        'k_symbol_count': 'sum',
-        'balance': 'mean'
-    }).reset_index()
 
-    pivoted_data = aggregated_data.pivot(index='account_id', columns='months_before_card')
-    pivoted_data.columns = ['_'.join(['M', str(col[1]), col[0]]) for col in pivoted_data.columns.values]
+    aggregated_data = (
+        filtered_df.groupby(["account_id", "months_before_card"])
+        .agg(
+            {
+                "volume": "sum",
+                "total_abs_amount": "sum",
+                "transaction_count": "sum",
+                "positive_transaction_count": "sum",
+                "negative_transaction_count": "sum",
+                "average_amount": "mean",
+                "median_amount": "median",
+                "min_amount": "min",
+                "max_amount": "max",
+                "std_amount": "std",
+                "type_count": "sum",
+                "operation_count": "sum",
+                "k_symbol_count": "sum",
+                "balance": "mean",
+            }
+        )
+        .reset_index()
+    )
+
+    pivoted_data = aggregated_data.pivot(
+        index="account_id", columns="months_before_card"
+    )
+    pivoted_data.columns = [
+        "_".join(["M", str(col[1]), col[0]]) for col in pivoted_data.columns.values
+    ]
 
     final_dataset = pivoted_data.reset_index()
     return final_dataset
 
-transactions_pivoted_df = pivot_transactions(matched_non_card_holders_w_issue_date_df, agg_transactions_monthly_df)
+
+transactions_pivoted_df = pivot_transactions(
+    matched_non_card_holders_w_issue_date_df, agg_transactions_monthly_df
+)
 transactions_pivoted_df.describe()
 ```
 
 # Merge everything together
 
 ```{python}
-golden_record_df = matched_non_card_holders_w_issue_date_df.merge(transactions_pivoted_df, on='account_id', how='left')
+golden_record_df = matched_non_card_holders_w_issue_date_df.merge(
+    transactions_pivoted_df, on="account_id", how="left"
+)
 golden_record_df.to_csv("data/golden_record.csv", index=False)
 data_reduction["Final Golden Record"] = len(golden_record_df)
 
-assert golden_record_df['client_id'].is_unique, "Each client_id should appear exactly once in the final DataFrame."
-assert golden_record_df['account_id'].is_unique, "Each account_id should appear exactly once in the final DataFrame."
+assert golden_record_df[
+    "client_id"
+].is_unique, "Each client_id should appear exactly once in the final DataFrame."
+assert golden_record_df[
+    "account_id"
+].is_unique, "Each account_id should appear exactly once in the final DataFrame."
 
 golden_record_df.head()
 ```
@@ -1602,10 +2061,10 @@ Looking at the first few rows of the final golden record, we can see the aggrega
 
 ```{python}
 plt.figure(figsize=(10, 6))
-plt.title('Number of Clients by Card Issuance Status')
-sns.countplot(x='has_card', data=golden_record_df)
-plt.xlabel('Card Issued')
-plt.ylabel('Count')
+plt.title("Number of Clients by Card Issuance Status")
+sns.countplot(x="has_card", data=golden_record_df)
+plt.xlabel("Card Issued")
+plt.ylabel("Count")
 plt.show()
 ```
 
@@ -1613,10 +2072,12 @@ We can see that the number of clients with a card issued is equal to the number 
 
 ```{python}
 plt.figure(figsize=(10, 6))
-plt.title('Distribution of Card Issuance Dates')
-sns.histplot(golden_record_df, x='card_issued', hue='has_card', kde=True, bins=30, alpha=0.5)
-plt.xlabel('Card Issuance Date')
-plt.ylabel('Count')
+plt.title("Distribution of Card Issuance Dates")
+sns.histplot(
+    golden_record_df, x="card_issued", hue="has_card", kde=True, bins=30, alpha=0.5
+)
+plt.xlabel("Card Issuance Date")
+plt.ylabel("Count")
 plt.show()
 ```
 
@@ -1629,40 +2090,50 @@ The following waterfall chart visualizes the data reduction process, highlightin
 ```{python}
 import plotly.graph_objects as go
 
-data_reduction_df = pd.DataFrame(list(data_reduction.items()), columns=['Category', 'Amount'])
-colors = ['skyblue' if amt >= 0 else 'orange' for amt in data_reduction_df['Amount']]
+data_reduction_df = pd.DataFrame(
+    list(data_reduction.items()), columns=["Category", "Amount"]
+)
+colors = ["skyblue" if amt >= 0 else "orange" for amt in data_reduction_df["Amount"]]
 
-fig = go.Figure(go.Waterfall(
-    name="20", orientation="v",
-    measure=["relative"] * (len(data_reduction_df) - 1) + ["total"],
-    x=data_reduction_df['Category'],
-    textposition="outside",
-    text=[f'{amt:,.0f}' for amt in data_reduction_df['Amount']],
-    y=data_reduction_df['Amount'],
-    connector={"line":{"color":"black", "width":2}},
-    decreasing={"marker":{"color":"orange"}},
-    increasing={"marker":{"color":"skyblue"}},
-    totals={"marker":{"color":"skyblue"}},
-))
+fig = go.Figure(
+    go.Waterfall(
+        name="20",
+        orientation="v",
+        measure=["relative"] * (len(data_reduction_df) - 1) + ["total"],
+        x=data_reduction_df["Category"],
+        textposition="outside",
+        text=[f"{amt:,.0f}" for amt in data_reduction_df["Amount"]],
+        y=data_reduction_df["Amount"],
+        connector={"line": {"color": "black", "width": 2}},
+        decreasing={"marker": {"color": "orange"}},
+        increasing={"marker": {"color": "skyblue"}},
+        totals={"marker": {"color": "skyblue"}},
+    )
+)
 
 fig.update_layout(
     title="Enhanced Data Reduction Waterfall Chart",
     xaxis=dict(title="Category"),
     yaxis=dict(title="Amount", range=[0, 5500]),
-    waterfallgap=0.3
+    waterfallgap=0.3,
 )
 fig.show()
 ```
 
-# Exploratory Data Analysis: Comparing Cardholders and Non-Cardholders
+# Exploratory Data Analysis: Golden Record
 
-## Trends in Monthly Financial Metrics
+## Comparing Cardholders and Non-Cardholders
+
+### Trends in Monthly Financial Metrics
 
 ```{python}
-golden_cardholders = golden_record_df[golden_record_df['has_card']]
-golden_non_cardholders = golden_record_df[~golden_record_df['has_card']]
+golden_cardholders = golden_record_df[golden_record_df["has_card"]]
+golden_non_cardholders = golden_record_df[~golden_record_df["has_card"]]
 
-def plot_trends_with_medians(cardholders, non_cardholders, columns, title, median_ranges):
+
+def plot_trends_with_medians(
+    cardholders, non_cardholders, columns, title, median_ranges
+):
     """
     Plots line graphs for average monthly values and annotates medians for specified ranges,
     adjusting x-axis indices to match the month sequence from the start.
@@ -1679,67 +2150,138 @@ def plot_trends_with_medians(cardholders, non_cardholders, columns, title, media
 
     months = list(range(1, 1 + len(columns)))
     plt.figure(figsize=(14, 7))
-    plt.plot(months, cardholder_avgs.values, marker='o', linestyle='-', color='blue', label='Cardholders')
-    plt.plot(months, non_cardholder_avgs.values, marker='o', linestyle='-', color='orange', label='Non-Cardholders')
+    plt.plot(
+        months,
+        cardholder_avgs.values,
+        marker="o",
+        linestyle="-",
+        color="blue",
+        label="Cardholders",
+    )
+    plt.plot(
+        months,
+        non_cardholder_avgs.values,
+        marker="o",
+        linestyle="-",
+        color="orange",
+        label="Non-Cardholders",
+    )
 
     for start, end in median_ranges:
-        median_cardholder = cardholders[columns[start:end+1]].median().median()
-        median_non_cardholder = non_cardholders[columns[start:end+1]].median().median()
-        plt.hlines(median_cardholder, months[start], months[end], colors='darkblue', linestyles='--', label=f'Median {start+1}-{end+1} (Cardholders): {median_cardholder:.2f}')
-        plt.hlines(median_non_cardholder, months[start], months[end], colors='red', linestyles='--', label=f'Median {start+1}-{end+1} (Non-Cardholders): {median_non_cardholder:.2f}')
+        median_cardholder = cardholders[columns[start : end + 1]].median().median()
+        median_non_cardholder = (
+            non_cardholders[columns[start : end + 1]].median().median()
+        )
+        plt.hlines(
+            median_cardholder,
+            months[start],
+            months[end],
+            colors="darkblue",
+            linestyles="--",
+            label=f"Median {start+1}-{end+1} (Cardholders): {median_cardholder:.2f}",
+        )
+        plt.hlines(
+            median_non_cardholder,
+            months[start],
+            months[end],
+            colors="red",
+            linestyles="--",
+            label=f"Median {start+1}-{end+1} (Non-Cardholders): {median_non_cardholder:.2f}",
+        )
 
     plt.title(title)
-    plt.xlabel('Month')
-    plt.ylabel('Value')
+    plt.xlabel("Month")
+    plt.ylabel("Value")
     plt.legend()
     plt.grid(True)
-    plt.xticks(months, labels=[f'M_{month}' for month in months])  # Proper month labels
+    plt.xticks(months, labels=[f"M_{month}" for month in months])  # Proper month labels
     plt.show()
 ```
 
 ### Monthly Balance Trends
 
 ```{python}
-median_ranges = [(0, 2), (9, 11)]  # First 3 months and last 3 months for a 12-month period
-balance_columns = [f'M_{i}_balance' for i in range(2, 14)]
-plot_trends_with_medians(golden_cardholders, golden_non_cardholders, balance_columns, 'Monthly Balance Trends', median_ranges)
+median_ranges = [
+    (0, 2),
+    (9, 11),
+]  # First 3 months and last 3 months for a 12-month period
+balance_columns = [f"M_{i}_balance" for i in range(2, 14)]
+plot_trends_with_medians(
+    golden_cardholders,
+    golden_non_cardholders,
+    balance_columns,
+    "Monthly Balance Trends",
+    median_ranges,
+)
 ```
 
 ### Monthly Volume Trends
 
 ```{python}
-volume_columns = [f'M_{i}_volume' for i in range(2, 14)]  # Simulating monthly volume columns
-plot_trends_with_medians(golden_cardholders, golden_non_cardholders, volume_columns, 'Monthly Volume Trends', median_ranges)
+volume_columns = [
+    f"M_{i}_volume" for i in range(2, 14)
+]  # Simulating monthly volume columns
+plot_trends_with_medians(
+    golden_cardholders,
+    golden_non_cardholders,
+    volume_columns,
+    "Monthly Volume Trends",
+    median_ranges,
+)
 ```
 
 ### Monthly Transaction Count Trends
 
 ```{python}
-transaction_count_columns = [f'M_{i}_transaction_count' for i in range(2, 14)]  # Simulating monthly transaction count columns
-plot_trends_with_medians(golden_cardholders, golden_non_cardholders, transaction_count_columns, 'Monthly Transaction Count Trends', median_ranges)
+transaction_count_columns = [
+    f"M_{i}_transaction_count" for i in range(2, 14)
+]  # Simulating monthly transaction count columns
+plot_trends_with_medians(
+    golden_cardholders,
+    golden_non_cardholders,
+    transaction_count_columns,
+    "Monthly Transaction Count Trends",
+    median_ranges,
+)
 ```
 
 ### Monthly Positive and Negative Transaction Count Trends
 
 ```{python}
-positive_transaction_count_columns = [f'M_{i}_positive_transaction_count' for i in range(2, 14)]  # Simulating monthly positive transaction count columns
-plot_trends_with_medians(golden_cardholders, golden_non_cardholders, positive_transaction_count_columns, 'Monthly Positive Transaction Count Trends', median_ranges)
+positive_transaction_count_columns = [
+    f"M_{i}_positive_transaction_count" for i in range(2, 14)
+]  # Simulating monthly positive transaction count columns
+plot_trends_with_medians(
+    golden_cardholders,
+    golden_non_cardholders,
+    positive_transaction_count_columns,
+    "Monthly Positive Transaction Count Trends",
+    median_ranges,
+)
 ```
 
 ### Monthly Negative Transaction Count Trends
 
 ```{python}
-negative_transaction_count_columns = [f'M_{i}_negative_transaction_count' for i in range(2, 14)]  # Simulating monthly negative transaction count columns
-plot_trends_with_medians(golden_cardholders, golden_non_cardholders, negative_transaction_count_columns, 'Monthly Negative Transaction Count Trends', median_ranges)
+negative_transaction_count_columns = [
+    f"M_{i}_negative_transaction_count" for i in range(2, 14)
+]  # Simulating monthly negative transaction count columns
+plot_trends_with_medians(
+    golden_cardholders,
+    golden_non_cardholders,
+    negative_transaction_count_columns,
+    "Monthly Negative Transaction Count Trends",
+    median_ranges,
+)
 ```
 
-## Comparison of Average Feature Values
+### Comparison of Average Feature Values
 
 ```{python}
 def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
     """
     Plots grouped bar charts for average feature values of cardholders and non-cardholders.
-    
+
     Parameters:
     - cardholders (pd.DataFrame): DataFrame containing data for cardholders.
     - non_cardholders (pd.DataFrame): DataFrame containing data for non-cardholders.
@@ -1752,12 +2294,20 @@ def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
     bar_width = 0.35
 
     fig, ax = plt.subplots(figsize=(14, 8))
-    bars1 = ax.bar(index, cardholder_avg, bar_width, label='Cardholders', color='skyblue')
-    bars2 = ax.bar([p + bar_width for p in index], non_cardholder_avg, bar_width, label='Non-Cardholders', color='orange')
+    bars1 = ax.bar(
+        index, cardholder_avg, bar_width, label="Cardholders", color="skyblue"
+    )
+    bars2 = ax.bar(
+        [p + bar_width for p in index],
+        non_cardholder_avg,
+        bar_width,
+        label="Non-Cardholders",
+        color="orange",
+    )
 
-    ax.set_xlabel('Feature')
-    ax.set_ylabel('Average Value')
-    ax.set_title('Average Feature Values by Group')
+    ax.set_xlabel("Feature")
+    ax.set_ylabel("Average Value")
+    ax.set_title("Average Feature Values by Group")
     ax.set_xticks([p + bar_width / 2 for p in index])
     ax.set_xticklabels(feature_columns)
     ax.legend()
@@ -1765,8 +2315,23 @@ def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
     plt.xticks(rotation=45)  # Rotate feature names for better visibility
     plt.show()
 
-plot_grouped_comparison(golden_cardholders, golden_non_cardholders, [col for col in golden_record_df.columns if 'balance' in col])
+
+plot_grouped_comparison(
+    golden_cardholders,
+    golden_non_cardholders,
+    [col for col in golden_record_df.columns if "balance" in col],
+)
 plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amount"])
+```
+
+## Remove Card-Related Features
+
+After merging the transactional and non-transactional data, we have many columns that are unnecessary for model training. We will remove all columns containing card-related information, except for the `has_card` column. This decision stems from the fact that 50% of our dataset consists of cardholders and the other 50% consists of non-cardholders, which we matched with the cardholders. Therefore, the data in the non-target card-related columns come from the actual cardholders.
+
+```{python}
+# remove all column that have card in them except for has_card
+golden_record_df = golden_record_df.loc[:, ~golden_record_df.columns.str.contains("card") | golden_record_df.columns.str.contains("has_card")]
+golden_record_df.isna().sum()
 ```
 
 # Data Partitioning
@@ -1776,15 +2341,32 @@ The data is split in a 80/20 ratio for training and testing purposes. The strati
 ```{python}
 from sklearn.model_selection import train_test_split
 
-train_df, test_df = train_test_split(golden_record_df, 
-                                     test_size=0.2, 
-                                     random_state=1337, 
-                                     stratify=golden_record_df['has_card'], 
-                                     shuffle=True)
+class DataModule:
+    def __init__(self, X_train, X_test, y_train, y_test, feature_columns=None):
+        self.feature_columns = feature_columns if feature_columns is not None else X_train.columns
+        
+        self.X_train = X_train
+        self.X_test = X_test
+        self.y_train = y_train
+        self.y_test = y_test
 
-print(f"Train set size: {len(train_df)}, Test set size: {len(test_df)}")
-print(f"Train set distribution:\n{train_df['has_card'].value_counts(normalize=True)}")
-print(f"Test set distribution:\n{test_df['has_card'].value_counts(normalize=True)}")
+def create_data_module(df, feature_cols, target_col="has_card", test_size=0.2):
+    X = df.drop(columns=[target_col])[feature_cols]
+    y = df[target_col]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, stratify=y, shuffle=True
+    )
+
+    return DataModule(X_train, X_test, y_train, y_test)
+
+data_module = create_data_module(golden_record_df, golden_record_df.drop(columns=["has_card"]).columns)
+
+print(f"Train set size: {len(data_module.X_train)}")
+print(f"Test set size: {len(data_module.X_test)}")
+
+print(f"Train set distribution:\n{data_module.y_train.value_counts(normalize=True)}")
+print(f"Test set distribution:\n{data_module.y_test.value_counts(normalize=True)}")
 ```
 
 As we can see the distribution of the target variable is maintained in both sets after the split.
@@ -1803,32 +2385,39 @@ The `train_evaluate_model` function is designed to streamline the process of tra
 The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
 
 ```{python}
+from sklearn.feature_selection import RFE, RFECV
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.model_selection import cross_validate
-from sklearn.metrics import make_scorer, f1_score, roc_auc_score, precision_score, recall_score, precision_recall_curve
+from sklearn.model_selection import cross_validate, StratifiedKFold
+from sklearn.metrics import make_scorer, f1_score, roc_auc_score, precision_score, recall_score
 import scikitplot as skplt
 import dalex as dx
 
 
 class Trainer:
-    def __init__(self, train_df, test_df, feature_columns, target_column, model):
-        self.train_df = train_df
-        self.test_df = test_df
-        self.feature_columns = feature_columns
-        self.target_column = target_column
+    def __init__(self, data_module, model, cv=10, use_rfe=False, n_features_to_select=None, verbose=False):
+        self.data_module = data_module
         self.model = model
-        self.preprocessor = None
+        self.cv = cv
+        self.use_rfe = use_rfe
+        self.n_features_to_select = n_features_to_select
+        self.verbose = verbose        
+        self.preprocessor = self._create_preprocessor()
+        
         self.pipeline = None
         self.metrics_report = None
 
-    def preprocess_data(self):
-        numerical_features = [col for col in self.feature_columns if self.train_df[col].dtype in ["int64", "float64"]]
-        categorical_features = [col for col in self.feature_columns if self.train_df[col].dtype == "object"]
-
+    def _create_preprocessor(self):
+        numerical_features = [col for col in self.data_module.X_train.columns if self.data_module.X_train[col].dtype in ["int64", "float64"]]
+        categorical_features = [col for col in self.data_module.X_train.columns if col not in numerical_features]
+        
+        other_features = [col for col in self.data_module.X_train.columns if col not in numerical_features + categorical_features]
+        if len(other_features) > 0:
+            raise ValueError(f"Columns with unsupported data types found: {other_features}")
+        
         numerical_pipeline = Pipeline(
             [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
         )
@@ -1840,27 +2429,38 @@ class Trainer:
             ]
         )
 
-        preprocessor = ColumnTransformer(
+        return ColumnTransformer(
             transformers=[
                 ("num", numerical_pipeline, numerical_features),
                 ("cat", categorical_pipeline, categorical_features),
             ]
         )
 
-        self.preprocessor = preprocessor
+    def fit(self):
+        model_pipeline = Pipeline([("model", self.model)])
 
-    def train_model(self):
-        X_train, y_train = self.train_df[self.feature_columns], self.train_df[self.target_column]
+        if self.use_rfe:
+            rfecv = RFECV(
+                estimator=self.model,
+                step=1,
+                cv=StratifiedKFold(self.cv),
+                scoring="accuracy",
+                n_jobs=-1,
+                verbose=3 if self.verbose else 0,
+            )
 
-        pipeline = Pipeline([("preprocessor", self.preprocessor), ("model", self.model)])
-        pipeline.fit(X_train, y_train)
+            model_pipeline.steps.insert(0, ("rfe", rfecv))
 
-        self.pipeline = pipeline
+        self.pipeline = Pipeline([("preprocessor", self.preprocessor), 
+                                  ("model_pipeline", model_pipeline)])
+    
+        self.pipeline.fit(self.data_module.X_train, self.data_module.y_train)
+        return self
 
-    def evaluate_model(self, cv=10):
-        X_train, y_train = self.train_df[self.feature_columns], self.train_df[self.target_column]
-        X_test, y_test = self.test_df[self.feature_columns], self.test_df[self.target_column]
-
+    def eval(self):        
+        X_train, X_test, y_train, y_test = (
+            self.data_module.X_train, self.data_module.X_test, self.data_module.y_train, self.data_module.y_test)
+        
         scoring = {
             "accuracy": "accuracy",
             "f1_macro": make_scorer(f1_score),
@@ -1870,7 +2470,8 @@ class Trainer:
         }
 
         train_metrics_summary = cross_validate(
-            self.pipeline, X_train, y_train, scoring=scoring, cv=cv, return_train_score=False
+            self.pipeline, X_train, y_train, scoring=scoring, cv=self.cv, 
+            return_train_score=False, n_jobs=-1, verbose=3 if self.verbose else 0
         )
 
         y_pred_proba = self.pipeline.predict_proba(X_test)[:, 1] if hasattr(self.pipeline, "predict_proba") else np.nan
@@ -1884,10 +2485,30 @@ class Trainer:
         }
 
         self.metrics_report = {
-            "train": {metric: {"folds": train_metrics_summary[f"test_{metric}"].tolist(), "mean": train_metrics_summary[f"test_{metric}"].mean(), "std": train_metrics_summary[f"test_{metric}"].std()} for metric in scoring},
+            "train": {metric: {"folds": train_metrics_summary[f"test_{metric}"].tolist(), 
+                               "mean": train_metrics_summary[f"test_{metric}"].mean(), 
+                               "std": train_metrics_summary[f"test_{metric}"].std()} 
+                      for metric in scoring},
             "test": {metric: test_metrics[metric] for metric in scoring}
         }
-
+        
+        return self
+        
+    def get_selected_features(self):
+        if not self.use_rfe:
+            return None
+        rfe = self.pipeline.named_steps['model_pipeline'].named_steps['rfe']
+        all_features = np.array(self.preprocessor.get_feature_names_out())
+        selected_features = all_features[rfe.support_]
+        
+        # get original column names based on closest match with the selected features
+        original_features = []
+        for feature in selected_features:
+            matches = [col for col in self.data_module.X_train.columns if col in feature]
+            original_features.append(matches[0] if matches else feature)
+            
+        return np.array(list(set(original_features))), selected_features
+    
     def get_trained_model(self):
         return self.pipeline
 
@@ -1898,19 +2519,6 @@ class Trainer:
         return self.metrics_report
 ```
 
-## Evaluation Metrics Visualization
-
-The `visualize_results` function is designed to visualize the results of the model evaluation. It displays the following plots:
-
-1. **Validation Metrics with Error Bars**: A bar plot showing the mean validation metrics with error bars representing the standard deviation.
-2. **Test Metrics**: A bar plot showing the test metrics.
-3. **Confusion Matrix**: A confusion matrix showing the true positive, false positive, true negative, and false negative counts.
-4. **ROC Curve**: A Receiver Operating Characteristic (ROC) curve showing the true positive rate against the false positive rate.
-5. **Precision-Recall Curve**: A precision-recall curve showing the precision against the recall.
-6. **Lift Curve**: A lift curve showing the ratio of the response rate to the random model response rate.
-7. **Cumulative Gain Curve**: A cumulative gain curve showing the ratio of the cumulative number of positive responses to the random model cumulative number of positive responses
-    .
-
 ```{python}
 from sklearn.metrics import classification_report, precision_recall_curve
 
@@ -1918,11 +2526,18 @@ class Visualizer:
     def __init__(self, trainer, model_name):
         self.trainer = trainer
         self.model_name = model_name
-        self.explainer = dx.Explainer(trainer.get_trained_model(), trainer.test_df[trainer.feature_columns], trainer.test_df[trainer.target_column])
-        self.y_true = trainer.test_df[trainer.target_column]
-        self.y_pred_proba = trainer.get_trained_model().predict_proba(trainer.test_df[trainer.feature_columns])
+        
+        X_train, X_test, y_train, y_test = (
+            self.trainer.data_module.X_train, self.trainer.data_module.X_test, self.trainer.data_module.y_train, self.trainer.data_module.y_test)
+        
+        self.explainer = dx.Explainer(trainer.get_trained_model(), X_test, y_test)
+        
+        self.X_test = X_test
+        self.y_true = y_test
+        self.y_pred_proba = trainer.get_trained_model().predict_proba(X_test)
 
-    def prepare_plot_layout(self, num_plots, num_cols=2):
+    @staticmethod
+    def prepare_plot_layout(num_plots, num_cols=2):
         num_rows = (num_plots + num_cols - 1) // num_cols
         fig, axes = plt.subplots(num_rows, num_cols, figsize=(20, 6 * num_rows), tight_layout=True)
         axes = axes.flatten()
@@ -2059,8 +2674,7 @@ class Visualizer:
         self.plot_model_explanations()
         plt.show()
 
-    def visualize_performance(self):
-        num_plots = 4
+    def visualize_performance(self, num_plots=4):
         fig, axes = self.prepare_plot_layout(num_plots)
 
         self.plot_performance_metrics(axes[:2])
@@ -2073,16 +2687,16 @@ class Visualizer:
         self.plot_model_explanations()
 
         if not feature_columns:
-            feature_columns = self.trainer.feature_columns[0]
+            feature_columns = self.trainer.data_module.feature_columns[0]
             
         # Partial Dependence Plot
-        self.plot_partial_dependence(feature_columns)  # Replace 'feature1' with the desired feature
+        self.plot_partial_dependence(feature_columns)
 
         # Accumulated Local Effects
-        self.plot_accumulated_local_effects(feature_columns)  # Replace 'feature2' with the desired feature
+        self.plot_accumulated_local_effects(feature_columns)
 
         # Breakdown Plot
-        observation = self.trainer.test_df[self.trainer.feature_columns].iloc[0]  
+        observation = self.trainer.test_df[self.trainer.data_module.feature_columns].iloc[0]  
         self.plot_breakdown(observation)
 
         plt.show()
@@ -2090,39 +2704,53 @@ class Visualizer:
 
 ```{python}
 ## LEGACY SUPPORT
-def train_evaluate_model(train_df, test_df, feature_columns, model, target_column="has_card", cv=10):
-    trainer = Trainer(train_df, test_df, feature_columns, target_column, model)
-    trainer.preprocess_data()
-    trainer.train_model()
-    trainer.evaluate_model(cv=cv)
+def train_evaluate_model(data_module, model, cv=10, use_rfe=False, n_features_to_select=None):
+    trainer = (Trainer(data_module, model, use_rfe=use_rfe, n_features_to_select=n_features_to_select, cv=cv, verbose=True)
+               .fit())
+    trainer.eval()
     return trainer.get_metrics_report(), trainer
 
-def visualize_results(trainer, model_name):
+def visualize_results(trainer, model_name, viz_explanations=False):
     visualizer = Visualizer(trainer, model_name)
     visualizer.visualize_performance()
-    visualizer.visualize_explanations()
+    if viz_explanations:
+        visualizer.visualize_explanations()
 ```
 
 ## Baseline Model: Logistic Regression
 
-We start with a simple logistic regression model as a baseline. This model is easy to interpret and can provide a good starting point for more complex models.
-
 ```{python}
-# Example usage
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
 
-# Baseline Logistic Regression
-baseline_model = LogisticRegression(random_state=42, max_iter=1000)
+baseline_model = LogisticRegression(max_iter=1000)
 feature_columns = [
                       'age',
                       'client_region'
                   ] + [col for col in golden_record_df.columns if 'M_' in col and ('_balance' in col or '_volume' in col)]
 target_column = 'has_card'
 
-baseline_metrics_report, baseline_trainer = train_evaluate_model(train_df, test_df, feature_columns, baseline_model)
+baseline_data_module = create_data_module(golden_record_df, feature_columns)
+
+baseline_metrics_report, baseline_trainer = train_evaluate_model(baseline_data_module, baseline_model)
 visualize_results(baseline_trainer, "Baseline Logistic Regression")
+```
+
+```{python}
+all_cols_data_module = create_data_module(golden_record_df, 
+                                          golden_record_df.drop(columns=["has_card"]).columns)
+
+baseline_trainer_rfe = (Trainer(all_cols_data_module, 
+                               LogisticRegression(max_iter=10000), 
+                               use_rfe=True, n_features_to_select=None, cv=2, verbose=False)
+                        .fit())
+
+
+baseline_trainer_rfe.eval()
+
+visualizer = Visualizer(baseline_trainer_rfe, "Baseline Logistic Regression with RFE")
+visualizer.visualize_performance()
+
+print("Selected Features:", baseline_trainer_rfe.get_selected_features())
 ```
 
 ## Random Forest and Decision Tree Models
@@ -2130,24 +2758,51 @@ visualize_results(baseline_trainer, "Baseline Logistic Regression")
 ```{python}
 from sklearn.ensemble import RandomForestClassifier
 
-model = RandomForestClassifier(random_state=42)
-rand_forest_metrics_report, rand_forest_trainer = train_evaluate_model(train_df, test_df, feature_columns, model)
+model = RandomForestClassifier()
+rand_forest_metrics_report, rand_forest_trainer = train_evaluate_model(
+    data_module, model, cv=5, use_rfe=False, n_features_to_select=None
+)
+
 visualize_results(rand_forest_trainer, "Random Forest")
 ```
 
 ```{python}
+print("Selected Features:", baseline_trainer_rfe.get_selected_features())
+```
+
+## Candidate Models: Random Forest and Gradient Boosting
+
+```{python}
 from sklearn.tree import DecisionTreeClassifier
 
-decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
-decision_tree_metrics_report, decision_tree_trainer = train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model)
+decision_tree_model = DecisionTreeClassifier(max_depth=5)
+
+decision_tree_trainer = (Trainer(data_module, decision_tree_model, cv=5, use_rfe=False, n_features_to_select=None)
+                         .fit()
+                         .eval())
+
 visualize_results(decision_tree_trainer, "Decision Tree")
+```
+
+```{python}
+from sklearn.ensemble import GradientBoostingClassifier
+
+gradient_boost_model = GradientBoostingClassifier(
+    n_estimators=100, learning_rate=0.1
+)
+
+gradient_boost_trainer = (Trainer(data_module, gradient_boost_model, cv=5, use_rfe=False, n_features_to_select=None)
+                          .fit()
+                          .eval())
+
+visualize_results(gradient_boost_trainer, "Gradient Boosting")
 ```
 
 # Model Comparison & Selection
 
 # Model Optimization
 
-# Model Explanation
+# Model Explanation & Reduction
 
 # Conclusion
 
