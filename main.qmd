@@ -2713,7 +2713,7 @@ class Visualizer:
         self.plot_accumulated_local_effects(feature_columns)
 
         # Breakdown Plot
-        observation = self.trainer.test_df[self.trainer.data_module.feature_columns].iloc[0]  
+        observation = self.trainer.data_module.X_test.iloc[0]  
         self.plot_breakdown(observation)
 
         plt.show()
