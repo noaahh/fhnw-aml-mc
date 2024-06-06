@@ -2762,12 +2762,13 @@ baseline_trainer_rfe = (Trainer(all_cols_data_module,
                                use_rfe=True, n_features_to_select=None, cv=2, verbose=False)
                         .fit())
 
-
 baseline_trainer_rfe.eval()
 
 visualizer = Visualizer(baseline_trainer_rfe, "Baseline Logistic Regression with RFE")
 visualizer.visualize_performance()
+```
 
+```{python}
 print("Selected Features:", baseline_trainer_rfe.get_selected_features())
 ```
 
@@ -2782,10 +2783,6 @@ rand_forest_metrics_report, rand_forest_trainer = train_evaluate_model(
 )
 
 visualize_results(rand_forest_trainer, "Random Forest")
-```
-
-```{python}
-print("Selected Features:", baseline_trainer_rfe.get_selected_features())
 ```
 
 ## Candidate Models: Random Forest and Gradient Boosting
