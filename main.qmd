@@ -14,6 +14,7 @@ jupyter: python3
 ---
 
 ```{python}
+import random
 from collections import OrderedDict
 from datetime import datetime
 
@@ -21,7 +22,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import random
 
 sns.set_theme()
 # plt.style.use('seaborn-white')
@@ -1588,19 +1588,20 @@ def match_cardholders_with_non_cardholders(non_transactional, transactions, top_
                 f"No eligible months found for cardholder client_id {cardholder['client_id']}."
             )
             continue
+        
+        cardholder_vector = cardholder[eligible_cols].values.reshape(1, -1)
+        non_cardholder_matrix = without_card_activity[eligible_cols].values
+        
+        cardholder_vector = np.where(cardholder_vector > 0, 1, 0).astype(bool)
+        non_cardholder_matrix = np.where(non_cardholder_matrix > 0, 1, 0).astype(bool)
 
-        cardholder_vector = (
-            cardholder[eligible_cols].fillna(0).astype(bool).values.reshape(1, -1)
-        )
-        non_cardholder__matrix = (
-            without_card_activity[eligible_cols].fillna(0).astype(bool).values
-        )
         assert (
-            cardholder_vector.shape[1] == non_cardholder__matrix.shape[1]
+            cardholder_vector.shape[1] == non_cardholder_matrix.shape[1]
         ), "Dimension mismatch between cardholder and applicant activity matrix."
 
         distances = pairwise_distances(
-            cardholder_vector, non_cardholder__matrix, metric="jaccard"
+            cardholder_vector, non_cardholder_matrix, 
+            metric="jaccard", n_jobs=-1 
         ).flatten()
         eligible_non_cardholders = [
             i
