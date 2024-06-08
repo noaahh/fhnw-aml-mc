@@ -24,6 +24,7 @@ import json
 
 transactions_df = pd.read_parquet("temp/transactions.parquet")
 accounts_df = pd.read_parquet("temp/accounts.parquet")
+non_transactional_df = pd.read_parquet("temp/non_transactional.parquet")
 # read data_reduction from temp/data_reduction.json
 with open("temp/data_reduction.json", "r") as f:
     data_reduction = json.load(f)

@@ -1294,6 +1294,7 @@ import json
 
 transactions_df.to_parquet("temp/transactions.parquet")
 accounts_df.to_parquet("temp/accounts.parquet")
+non_transactional_df.to_parquet("temp/non_transactional.parquet")
 
 # save data reduction
 with open("temp/data_reduction.json", "w") as f:
