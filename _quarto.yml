@@ -23,3 +23,6 @@ format:
     embed-resources: true
     code-overflow: scroll
     code-copy: hover
+    fig-align: center
+    fig-format: svg
+    fig-responsive: true
