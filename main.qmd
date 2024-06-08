@@ -1,11 +1,5 @@
-# Chapter 1: Understanding the data (EDA)
-
 {{< include sections/temp1.qmd >}}
 
-# Chapter 2: Preparing Golden Record
-
 {{< include sections/temp2.qmd >}}
-
-# Chapter 3: Training Models
 
 {{< include sections/temp3.qmd >}}
