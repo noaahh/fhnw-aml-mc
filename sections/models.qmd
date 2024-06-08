@@ -1,5 +1,5 @@
 ```{python}
-### DEPENDENCY #TODO REMOVE FOR MERGE
+## DEPENDENCY #TODO REMOVE FOR MERGE
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,7 +8,7 @@ import seaborn as sns
 golden_record_df = pd.read_parquet('temp/golden_record.parquet')
 ```
 
-## Data Partitioning
+# Data Partitioning
 
 The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
 
@@ -48,9 +48,9 @@ print(f"Test set distribution:\n{data_module.y_test.value_counts(normalize=True)
 
 As we can see the distribution of the target variable is maintained in both sets after the split.
 
-## Model Construction
+# Model Construction
 
-### Pipeline for Training and Evaluation
+## Pipeline for Training and Evaluation
 
 The `train_evaluate_model` function is designed to streamline the process of training and evaluating machine learning models. It performs the following steps:
 
@@ -200,7 +200,7 @@ class Visualizer:
         metrics = list(train_metrics.keys())
         fold_scores = {metric: train_metrics[metric]['folds'] for metric in metrics}
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         ax.boxplot(fold_scores.values(), labels=metrics, notch=True, patch_artist=True)
         ax.set_title(f'{self.model_name}: Validation Metrics Box Plot (CV={cv})')
         ax.set_xlabel('Metrics')
@@ -214,7 +214,7 @@ class Visualizer:
         test_values = list(test_metrics.values())
         test_names = list(test_metrics.keys())
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         sns.barplot(x=test_names, y=test_values, ax=ax)
         ax.set_title(f'{self.model_name}: Test Metrics')
         ax.set_xlabel('Metrics')
@@ -230,7 +230,7 @@ class Visualizer:
 
     def plot_confusion_matrix(self):
         preds = self.y_test_pred_proba.argmax(axis=1)
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         skplt.metrics.plot_confusion_matrix(self.y_true, preds, ax=ax)
         ax.set_title(f'{self.model_name}: Confusion Matrix')
 
@@ -241,7 +241,7 @@ class Visualizer:
         report_df = pd.DataFrame(report).transpose()
         report_df = report_df.round(2)
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         table = ax.table(cellText=report_df.values, colLabels=report_df.columns, rowLabels=report_df.index,
                          cellLoc='center', rowLoc='center', loc='center', fontsize=12)
         table.auto_set_font_size(False)
@@ -258,7 +258,7 @@ class Visualizer:
         optimal_idx = np.argmax(f1_scores)
         optimal_threshold = thresholds[optimal_idx]
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         ax.plot(thresholds, f1_scores[:-1], label='F1-score')
         ax.axvline(x=optimal_threshold, color='red', linestyle='--',
                    label=f'Optimal Threshold: {optimal_threshold:.2f}')
@@ -269,25 +269,25 @@ class Visualizer:
         fig.show()
 
     def plot_roc_curve(self):
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         skplt.metrics.plot_roc(self.y_true, self.y_test_pred_proba, ax=ax)
         ax.set_title(f'{self.model_name}: ROC Curve on Test Set')
         fig.show()
 
     def plot_precision_recall_curve(self):
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         skplt.metrics.plot_precision_recall(self.y_true, self.y_test_pred_proba, ax=ax)
         ax.set_title(f'{self.model_name}: Precision-Recall Curve on Test Set')
         fig.show()
 
     def plot_lift_curve(self):
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         skplt.metrics.plot_lift_curve(self.y_true, self.y_test_pred_proba, ax=ax)
         ax.set_title(f'{self.model_name}: Lift Curve on Test Set')
         fig.show()
 
     def plot_cumulative_gain_curve(self):
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots()
         skplt.metrics.plot_cumulative_gain(self.y_true, self.y_test_pred_proba, ax=ax)
         ax.set_title(f'{self.model_name}: Cumulative Gain Curve on Test Set')
         fig.show()
@@ -364,7 +364,7 @@ def create_top_n_customers_list(model, data, n) -> pd.DataFrame:
     return top_n_results
 ```
 
-### Baseline Model: Logistic Regression
+## Baseline Model: Logistic Regression
 
 ```{python}
 baseline_feature_columns = [
@@ -430,8 +430,8 @@ for col in golden_record_df.columns:
     print(col)
 ```
 
-### Candidate Models
-#### Logistic Regression
+## Candidate Models
+### Logistic Regression
 We will train a logistic regression model with the new feature set and evaluate its performance as it already showed promising results in the baseline model.
 
 ```{python}
@@ -443,7 +443,7 @@ log_reg_visualizer = Visualizer(log_reg_trainer, "Logistic Regression")
 log_reg_visualizer.plot_validation_metrics()
 ```
 
-#### Random Forest
+### Random Forest
 We will also train a Random Forest model to see if it can outperform the logistic regression model. Random Forest models are known for their robustness and ability to capture complex relationships in the data.
 
 ```{python}
@@ -460,7 +460,7 @@ rf_visualizer = Visualizer(rf_trainer, "Random Forest")
 rf_visualizer.plot_validation_metrics()
 ```
 
-#### Decision Tree
+### Decision Tree
 We will also train a Decision Tree model to see how it performs compared to the other models. Decision Trees are known for their interpretability and simplicity.
 
 ```{python}
@@ -493,11 +493,11 @@ gradient_boost_visualizer = Visualizer(gradient_boost_trainer, "Gradient Boostin
 gradient_boost_visualizer.plot_validation_metrics()
 ```
 
-## Model Comparison & Selection
+# Model Comparison & Selection
 
-## Model Optimization
+# Model Optimization
 
-## Model Explanation & Reduction
+# Model Explanation & Reduction
 
-## Conclusion
+# Conclusion
 

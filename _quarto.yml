@@ -25,3 +25,5 @@ format:
     code-copy: hover
     fig-align: center
     fig-responsive: true
+    fig-width: 9
+    fig-height: 6

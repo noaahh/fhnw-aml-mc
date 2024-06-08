@@ -23,9 +23,9 @@ def seed_everything(seed):
 seed_everything(SEED)
 ```
 
-## Data Import & Wrangling
+# Data Import & Wrangling
 
-### Helper Functions
+## Helper Functions
 
 ```{python}
 def remap_values(df, column, mapping):
@@ -70,12 +70,10 @@ def plot_categorical_variables(df, categorical_columns, fill_na_value="NA"):
 
     total = float(len(df))
     fig, axes = plt.subplots(
-        nrows=len(categorical_columns), figsize=(14, len(categorical_columns) * 4.5)
+        nrows=len(categorical_columns), figsize=(8, len(categorical_columns) * 5)
     )
 
-    if (
-        len(categorical_columns) == 1
-    ):  # If there's only one categorical variable, wrap axes in a list
+    if len(categorical_columns) == 1:  # If there's only one categorical variable, wrap axes in a list
         axes = [axes]
 
     for i, var in enumerate(categorical_columns):
@@ -86,6 +84,9 @@ def plot_categorical_variables(df, categorical_columns, fill_na_value="NA"):
         axes[i].set_title(f"Distribution of {var}")
         axes[i].set_ylabel("Count")
         axes[i].set_xlabel(var)
+        # if the number is more thatn 6 rotate the x labels
+        if len(df[var].value_counts()) > 6:
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
 
         for p in ax.patches:
             height = p.get_height()
@@ -140,7 +141,7 @@ def plot_date_monthly_counts(df, date_column, title):
     df["month"] = df[date_column].dt.to_period("M")
 
     monthly_counts = df["month"].value_counts().sort_index()
-    monthly_counts.plot(kind="bar", figsize=(14, 6))
+    monthly_counts.plot(kind="bar")
     plt.title(title)
     plt.xlabel("Month")
     plt.ylabel("Count")
@@ -164,13 +165,14 @@ def add_percentage_labels(ax, hue_order):
             va="center",
             fontsize=9,
             color="white",
-            weight="bold",
+            weight="bold"
         )
+
 ```
 
-### Entities
+## Entities
 
-#### Accounts
+### Accounts
 
 ```{python}
 accounts_df = read_csv("data/account.csv")
@@ -214,7 +216,7 @@ plot_categorical_variables(accounts_df, ["account_frequency"])
 plot_numerical_distributions(accounts_df, ["account_created"])
 ```
 
-#### Clients
+### Clients
 
 ```{python}
 clients_df = read_csv("data/client.csv")
@@ -278,7 +280,7 @@ clients_df.describe()
 plot_numerical_distributions(clients_df, ["birth_date", "age"])
 ```
 
-#### Dispositions
+### Dispositions
 
 ```{python}
 dispositions_df = read_csv("data/disp.csv")
@@ -303,7 +305,7 @@ As the goal of this model is to address accounts and not client directly we will
 dispositions_df = dispositions_df[dispositions_df["type"] == "OWNER"]
 ```
 
-#### Orders
+### Orders
 
 ```{python}
 orders_df = read_csv("data/order.csv")
@@ -350,7 +352,7 @@ plot_categorical_variables(orders_df, ["k_symbol", "bank_to"])
 plot_numerical_distributions(orders_df, ["debited_amount"])
 ```
 
-#### Transactions
+### Transactions
 
 ```{python}
 # column 8 is the 'bank' column which contains NaNs and must be read as string
@@ -434,7 +436,7 @@ The balance distribution also showcases that there are accounts with a negative 
 
 According to description of the field balance: "balance after transaction"
 
-##### Transaction Amounts and Counts by Month
+#### Transaction Amounts and Counts by Month
 
 ```{python}
 # Getting a list of unique years from the dataset
@@ -460,7 +462,7 @@ years = sorted(transactions_df["year"].unique())
 fig, axs = plt.subplots(
     len(years) * 2,
     1,
-    figsize=(15, 6 * len(years)),
+    figsize=(8, 6 * len(years)),
     sharex=True,
     gridspec_kw={"height_ratios": [3, 1] * len(years)},
 )
@@ -514,7 +516,7 @@ plt.show()
 fig, axs = plt.subplots(
     2,
     len(years),
-    figsize=(40 * len(years) / 2, 30),
+    figsize=(8 * len(years) / 2, 7),
     sharey="row",
     gridspec_kw={"height_ratios": [3, 1]},
 )
@@ -564,7 +566,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-##### Negative Balances
+#### Negative Balances
 
 ```{python}
 negative_balances = transactions_df[transactions_df["balance"] < 0]
@@ -574,7 +576,7 @@ print(f"Number of transactions with negative balance: {len(negative_balances)}")
 
 There appear to be 2999 transactions which have a negative balance, therefore after the transaction the account balance was negative. This implies that these accounts are in some kind of debt.
 
-#### Loans
+### Loans
 
 ```{python}
 loans_df = read_csv("data/loan.csv")
@@ -629,7 +631,7 @@ The distribution of durations seems to be even.
 plot_numerical_distributions(loans_df, ["granted_date"])
 ```
 
-#### Credit Cards
+### Credit Cards
 
 ```{python}
 cards_df = read_csv("data/card.csv")
@@ -657,7 +659,7 @@ plot_categorical_variables(cards_df, ["type"])
 plot_numerical_distributions(cards_df, ["issued"])
 ```
 
-#### Demographic data
+### Demographic data
 
 ```{python}
 districts_df = read_csv("data/district.csv")
@@ -722,7 +724,7 @@ plot_categorical_variables(districts_df, ["region"])
 
 We need to differentiate between the domicile of the client and account, as they can be different.
 
-### Data Relationships
+## Data Relationships
 
 Following the documentation of the dataset, there are multiple relationships that need to be validated. https://sorry.vse.cz/\~berka/challenge/PAST/index.html
 
@@ -785,7 +787,7 @@ assert set(cards_df["disp_id"]).issubset(
 ), "All disp_ids in CARD should exist in DISPOSITION."
 ```
 
-## Data Preparation: Non-Transactional Data
+# Data Preparation: Non-Transactional Data
 
 ```{python}
 orders_pivot_df = orders_df.pivot_table(
@@ -892,14 +894,14 @@ non_transactional_df.to_csv("data/non_transactional.csv", index=False)
 non_transactional_df.info()
 ```
 
-## Exploratory Data Analysis
+# Exploratory Data Analysis
 
-### Non-transactional Data
+## Non-transactional Data
 
-#### Card Holders
+### Card Holders
 
 ```{python}
-plt.figure(figsize=(10, 6))
+plt.figure()
 plt.title("Number of Clients by Card Type")
 sns.barplot(
     x=["No Card", "Classic/Gold Card Holders", "Junior Card Holders"],
@@ -925,7 +927,7 @@ plt.show()
 Looking at the distribution of card holders in general we can see that the most clients are not in a possession of a credit card.
 
 ```{python}
-plt.figure(figsize=(10, 6))
+plt.figure()
 plt.title(
     f'Distribution of Age for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}'
 )
@@ -952,7 +954,7 @@ non_transactional_df["age_at_card_issuance"] = (
     non_transactional_df["age_at_card_issuance"].dt.days // 365
 )
 
-plt.figure(figsize=(10, 6))
+plt.figure()
 plt.title(
     f'Distribution of Age at Card Issuance for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}'
 )
@@ -970,7 +972,7 @@ plt.show()
 Here we can see that roughly 1/3 of the Junior Card holders were not of legal age (assuming legal age is 18) when receiving their Junior Card.
 
 ```{python}
-plt.figure(figsize=(10, 6))
+plt.figure()
 plt.title(
     f"Distribution of Age at Card Issuance for All Card Types\n total count = {len(non_transactional_df)}"
 )
@@ -1012,7 +1014,7 @@ del before_len
 
 Looking at the age distribution of Junior card holders and their occurence in comparison it seems valid to remove them as they are not the target group and make up a small subset of the complete dataset.
 
-#### Time factors on Card Status
+### Time factors on Card Status
 
 The time between creating an account and issuing a card may also be important when filtering customers based on their history. We should avoid filtering out potentially interesting periods and understand how the timespans between account creation and card issuance are distributed.
 
@@ -1026,7 +1028,7 @@ non_transactional_w_cards_df["duration_days"] = (
     - non_transactional_w_cards_df["account_created"]
 ).dt.days
 
-plt.figure(figsize=(12, 8))
+plt.figure()
 sns.histplot(
     non_transactional_w_cards_df["duration_days"], bins=50, edgecolor="black", kde=True
 )
@@ -1048,7 +1050,7 @@ non_transactional_df["client_tenure_years_relative"] = (
     max_account_creation_date - non_transactional_df["account_created"]
 ).dt.days / 365.25
 
-plt.figure(figsize=(10, 6))
+plt.figure()
 ax = sns.histplot(
     data=non_transactional_df,
     x="client_tenure_years_relative",
@@ -1073,12 +1075,12 @@ plt.show()
 
 The bar chart shows the tenure of clients in years, categorized by whether they own a credit card (True) or not (False). Each bar represents the percentage of clients within a specific tenure range, allowing for comparison of the distribution of card ownership among clients with different lengths of association with the bank.
 
-#### Demographics
+### Demographics
 
 Using the available demographic data, we can investigate the potential correlation between demographic data and card status. The average salary may indicate a difference between cardholders and non-cardholders, as it is reasonable to assume that cardholders have a higher average salary than non-cardholders.
 
 ```{python}
-plt.figure(figsize=(10, 6))
+plt.figure()
 sns.boxplot(x="has_card", y="client_average_salary", data=non_transactional_df)
 plt.title("Average Salary in Client's Region by Card Ownership")
 plt.xlabel("Has Card")
@@ -1104,7 +1106,7 @@ non_transactional_df["age_group"] = pd.cut(
     labels=["<25", "25-40", "40-55", "55-70", ">70"],
 )
 
-plt.figure(figsize=(15, 15))
+plt.figure(figsize=(8, 12))
 
 # Age Group
 plt.subplot(3, 1, 1)
@@ -1152,7 +1154,7 @@ plt.show()
 
 **Card Ownership by Region** The bar chart at the bottom illustrates card ownership across different regions, showing a relatively consistent pattern among most regions.
 
-#### Impact of Loans / Debt
+### Impact of Loans / Debt
 
 ```{python}
 simplified_loan_status_mapping = {
@@ -1167,7 +1169,7 @@ non_transactional_df["loan_status_simplified"] = non_transactional_df[
     "loan_status"
 ].map(simplified_loan_status_mapping)
 
-## this variable wants to kill itself
+# this variable wants to kill itself
 loan_status_simplified_card_ownership_counts = (
     non_transactional_df.groupby(["loan_status_simplified", "has_card"])
     .size()
@@ -1179,7 +1181,7 @@ loan_status_simplified_card_ownership_percentages = (
 ).T * 100
 
 loan_status_simplified_card_ownership_percentages.plot(
-    kind="bar", stacked=True, figsize=(10, 6)
+    kind="bar", stacked=True
 )
 plt.title("Interaction Between Simplified Loan Status and Card Ownership")
 plt.xlabel("Simplified Loan Status")
@@ -1190,7 +1192,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-### Transactional Data
+## Transactional Data
 
 TODO: Add more EDA for transactional data
 
@@ -1273,7 +1275,7 @@ validate_first_transactions(transactions_df)
 We can confirm the truth of the assertions made. It is certain that there is a transaction with an amount equal to the balance in the transaction history of any account on the first date.
 
 ```{python}
-### DEPENDENCY 1 TODO REMOVE FOR MERGE 
+## DEPENDENCY 1 TODO REMOVE FOR MERGE 
 import json
 # save transactions_df to temp as parquet
 

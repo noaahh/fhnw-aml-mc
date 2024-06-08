@@ -1,5 +1,5 @@
 ```{python}
-### DEPENDENCY #TODO REMOVE FOR MERGE
+## DEPENDENCY #TODO REMOVE FOR MERGE
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,9 +16,9 @@ with open("temp/data_reduction.json", "r") as f:
 ```
 
 
-## Data Preparation: Transactional Data
+# Data Preparation: Transactional Data
 
-### Set artificial issue date for non-card holders
+## Set artificial issue date for non-card holders
 
 ```{python}
 def add_months_since_account_to_card(df):
@@ -71,7 +71,7 @@ non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(
     subset=["card_issued"]
 ).copy()
 
-plt.figure(figsize=(12, 8))
+plt.figure()
 sns.histplot(
     non_transactional_w_card_df["months_since_account_to_card"], kde=True, bins=30
 )
@@ -85,7 +85,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-### Match by similar transaction activity
+## Match by similar transaction activity
 
 The following approaches were considered to match non-card holders with card holders:
 
@@ -103,7 +103,7 @@ The resolution of the activity matrix is a binary matrix where each row represen
 
 **Assumption**: This assumes that clients active during similar periods might be influenced by the same economic and societal conditions, providing a more nuanced foundation for establishing connections between current cardholders and potential new ones.
 
-#### Construction of the Activity Matrix
+### Construction of the Activity Matrix
 
 The activity matrix serves as the foundation of our matching process, mapping out the engagement of clients with our services over time. It is constructed from transaction data, organizing client interactions into a structured format that highlights periods of activity.
 
@@ -154,7 +154,7 @@ def prepare_activity_matrix(transactions):
 
 def plot_activity_matrix(activity_matrix):
     sparse_matrix = activity_matrix.astype(bool)
-    plt.figure(figsize=(20, 10))
+    plt.figure()
     sns.heatmap(sparse_matrix, cmap="viridis", cbar=True, yticklabels=False)
     plt.title(f"Activity Matrix across all clients sorted by account creation date")
     plt.xlabel("Period")
@@ -166,7 +166,7 @@ activity_matrix = prepare_activity_matrix(transactions_df)
 plot_activity_matrix(activity_matrix)
 ```
 
-#### Eligibility Criteria
+### Eligibility Criteria
 
 After constructing the activity matrix, we check for eligibility of non-cardholders to be matched with cardholders. This ensures alignment for later model construction. The eligibility criteria are as follows:
 
@@ -211,7 +211,7 @@ def check_eligibility_for_matching(non_cardholder, cardholder, verbose=False):
     return period_diff >= ELIGIBILITY_THRESHOLD_HIST_MONTHS
 ```
 
-#### Matching Process
+### Matching Process
 
 Next up we will implement the matching process. Our matching utilizes the Jaccard similarity index to compare activity patterns: We compare a vector representing an existing cardholder's monthly activity against a matrix of non-cardholders' activity patterns. Here we only consider the activity from the first transaction period across all customers to the card issue date.
 
@@ -421,7 +421,7 @@ data_reduction["Non-cardholders without match"] = -(
 del before_len
 ```
 
-### Aggregate on a Monthly Basis
+## Aggregate on a Monthly Basis
 
 After matching cardholders with non-cardholders and setting artificial card issue dates, we aggregate the transactional data on a monthly basis. This aggregation provides a comprehensive overview of financial activities for each account, facilitating further model development providing us with a fixed of features to work with.
 
@@ -561,8 +561,8 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
 validate_monthly_aggregated_transactions(agg_transactions_monthly_df, transactions_df)
 ```
 
-## Exploratory Data Analysis: Aggregated Monthly Transactions
-### Monthly Balance Difference and Volume
+# Exploratory Data Analysis: Aggregated Monthly Transactions
+## Monthly Balance Difference and Volume
 
 This plot gives a clear picture of how money moves in and out of an account each month and how these movements affect the overall balance. It does this by showing two things:
 
@@ -573,14 +573,14 @@ This plot gives a clear picture of how money moves in and out of an account each
 
 ```{python}
 def plot_monthly_balance_diff_and_volume(
-    transactions_monthly, account_id, figsize=(12, 8)
+    transactions_monthly, account_id 
 ):
     account_transactions = transactions_monthly[
         transactions_monthly["account_id"] == account_id
     ].sort_values(by="month")
     account_transactions["balance_diff"] = account_transactions["balance"].diff()
 
-    plt.figure(figsize=figsize)
+    plt.figure(figsize=(9.5, 6))
 
     plt.plot(
         account_transactions["month"].astype(str),
@@ -599,17 +599,16 @@ def plot_monthly_balance_diff_and_volume(
     plt.title(f"Monthly Balance Difference and Volume for Account {account_id}")
     plt.xlabel("Month")
     plt.ylabel("Value")
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=90)
     plt.legend()
     plt.grid(True)
-    plt.tight_layout()
     plt.show()
 
 
 plot_monthly_balance_diff_and_volume(agg_transactions_monthly_df, 2)
 ```
 
-### Monthly Transactions, Balance, and Volume Plot Explanation
+## Monthly Transactions, Balance, and Volume Plot Explanation
 
 This visualization offers a snapshot of an account’s activity over time by comparing money movement each month with the overall account balance. It helps to understand:
 
@@ -624,7 +623,7 @@ def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, accou
         agg_transactions_monthly["account_id"] == account_id
     ]
 
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(9.5, 6))
 
     plt.plot(
         account_transactions["month"].astype(str),
@@ -643,17 +642,16 @@ def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, accou
     plt.title(f"Monthly Transactions and Balance for Account {account_id}")
     plt.xlabel("Month")
     plt.ylabel("Value")
-    plt.xticks(rotation=60)
+    plt.xticks(rotation=90)
     plt.legend()
     plt.grid(True)
-    plt.tight_layout()
     plt.show()
 
 
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 2)
 ```
 
-### Delieverable: Closer Look at Account 14
+## Delieverable: Closer Look at Account 14
 
 ```{python}
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 14)
@@ -661,7 +659,7 @@ plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 14)
 
 Account 14 shows a rather conservative transaction history. The spending habits are all withing range of 10k to -10k per month. We can see little volatility, the account shows a slight trend of growing.
 
-### Delieverable: Closer Look at Account 18
+## Delieverable: Closer Look at Account 18
 
 ```{python}
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 18)
@@ -675,7 +673,7 @@ Looking at the balance and volume per month for the accounts 14 and 18 we can no
 
 TODO: Add analysis
 
-## Pivot Transactions: Rolling Up to Monthly Aggregates
+# Pivot Transactions: Rolling Up to Monthly Aggregates
 
 We have condensed transaction data into a monthly aggregated format. This aggregation serves a multifaceted purpose:
 
@@ -769,7 +767,7 @@ transactions_pivoted_df = pivot_transactions(
 transactions_pivoted_df.describe()
 ```
 
-## Merge everything together
+# Merge everything together
 
 ```{python}
 golden_record_df = matched_non_card_holders_w_issue_date_df.merge(
@@ -791,7 +789,7 @@ golden_record_df.head()
 Looking at the first few rows of the final golden record, we can see the aggregated transactional data for each account, with columns representing various metrics for each month leading up to the card issuance date.
 
 ```{python}
-plt.figure(figsize=(10, 6))
+plt.figure()
 plt.title("Number of Clients by Card Issuance Status")
 sns.countplot(x="has_card", data=golden_record_df)
 plt.xlabel("Card Issued")
@@ -802,7 +800,7 @@ plt.show()
 We can see that the number of clients with a card issued is equal to the number of clients without a card issued, indicating a successful matching process.
 
 ```{python}
-plt.figure(figsize=(10, 6))
+plt.figure()
 plt.title("Distribution of Card Issuance Dates")
 sns.histplot(
     golden_record_df, x="card_issued", hue="has_card", kde=True, bins=30, alpha=0.5
@@ -814,7 +812,7 @@ plt.show()
 
 The distribution of card issuance dates shows that the card issuance process was spread out over time, with an expected identical distribution for clients with and without cards issued.
 
-## Data Reduction Summary
+# Data Reduction Summary
 
 The following waterfall chart visualizes the data reduction process, highlighting the number of records retained or lost at each stage.
 
@@ -851,11 +849,11 @@ fig.update_layout(
 fig.show()
 ```
 
-## Exploratory Data Analysis: Golden Record
+# Exploratory Data Analysis: Golden Record
 
-### Comparing Cardholders and Non-Cardholders
+## Comparing Cardholders and Non-Cardholders
 
-#### Trends in Monthly Financial Metrics
+### Trends in Monthly Financial Metrics
 
 ```{python}
 golden_cardholders = golden_record_df[golden_record_df["has_card"]]
@@ -880,7 +878,7 @@ def plot_trends_with_medians(
     non_cardholder_avgs = non_cardholders[columns].mean()
 
     months = list(range(1, 1 + len(columns)))
-    plt.figure(figsize=(14, 7))
+    plt.figure()
     plt.plot(
         months,
         cardholder_avgs.values,
@@ -929,7 +927,7 @@ def plot_trends_with_medians(
     plt.show()
 ```
 
-#### Monthly Balance Trends
+### Monthly Balance Trends
 
 ```{python}
 median_ranges = [
@@ -946,7 +944,7 @@ plot_trends_with_medians(
 )
 ```
 
-#### Monthly Volume Trends
+### Monthly Volume Trends
 
 ```{python}
 volume_columns = [
@@ -961,7 +959,7 @@ plot_trends_with_medians(
 )
 ```
 
-#### Monthly Transaction Count Trends
+### Monthly Transaction Count Trends
 
 ```{python}
 transaction_count_columns = [
@@ -976,7 +974,7 @@ plot_trends_with_medians(
 )
 ```
 
-#### Monthly Positive and Negative Transaction Count Trends
+### Monthly Positive and Negative Transaction Count Trends
 
 ```{python}
 positive_transaction_count_columns = [
@@ -991,7 +989,7 @@ plot_trends_with_medians(
 )
 ```
 
-#### Monthly Negative Transaction Count Trends
+### Monthly Negative Transaction Count Trends
 
 ```{python}
 negative_transaction_count_columns = [
@@ -1006,7 +1004,7 @@ plot_trends_with_medians(
 )
 ```
 
-#### Comparison of Average Feature Values
+### Comparison of Average Feature Values
 
 ```{python}
 def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
@@ -1024,7 +1022,7 @@ def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
     index = range(len(feature_columns))
     bar_width = 0.35
 
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig, ax = plt.subplots()
     bars1 = ax.bar(
         index, cardholder_avg, bar_width, label="Cardholders", color="skyblue"
     )
@@ -1056,7 +1054,7 @@ plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amoun
 ```
 
 ```{python}
-### DEPENDENCIES TODO REMOVE FOR MERGE
+## DEPENDENCIES TODO REMOVE FOR MERGE
 
 # save golden record to temp
 golden_record_df.to_parquet("temp/golden_record.parquet")

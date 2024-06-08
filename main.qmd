@@ -1,3 +1,8 @@
+---
+title: AML Mini-Challenge - Credit Card Affinity Modelling
+author: Dominik Filliger & Noah Leuenberger (2024)
+---
+
 {{< include sections/eda.qmd >}}
 
 {{< include sections/data_prep.qmd >}}
