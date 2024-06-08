@@ -1,5 +1,5 @@
-{{< include sections/temp1.qmd >}}
+{{< include sections/eda.qmd >}}
 
-{{< include sections/temp2.qmd >}}
+{{< include sections/data_prep.qmd >}}
 
-{{< include sections/temp3.qmd >}}
+{{< include sections/models.qmd >}}
