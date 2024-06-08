@@ -1,0 +1,15 @@
+---
+title: "NPR Mini-Challenge Abgabe"
+---
+
+# Chapter 1: Understanding the data (EDA)
+
+{{< include temp1.qmd >}}
+
+# Chapter 2: Preparing Golden Record
+
+{{< include temp2.qmd >}}
+
+# Chapter 3: Training Models
+
+{{< include temp3.qmd >}}

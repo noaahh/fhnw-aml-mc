@@ -9,3 +9,5 @@ scikit-plot
 tqdm~=4.66.4
 plotly~=5.22.0
 dalex~=1.7.0
+pyarrow~=16.1.0
+fastparquet~=2024.5.0

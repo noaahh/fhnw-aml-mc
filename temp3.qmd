@@ -1,0 +1,518 @@
+---
+title: AML Mini-Challenge - Credit Card Affinity Modelling
+author: Dominik Filliger & Noah Leuenberger
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-overflow: scroll
+    code-copy: hover
+execute:
+  echo: true
+  output: true
+jupyter: python3
+---
+
+```{python}
+## DEPENDENCY #TODO REMOVE FOR MERGE
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+golden_record_df = pd.read_parquet('temp/golden_record.parquet')
+```
+
+# Data Partitioning
+
+The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
+
+```{python}
+from sklearn.model_selection import train_test_split
+
+
+class DataModule:
+    def __init__(self, X_train, X_test, y_train, y_test, feature_columns=None):
+        self.feature_columns = feature_columns if feature_columns is not None else X_train.columns
+
+        self.X_train = X_train
+        self.X_test = X_test
+        self.y_train = y_train
+        self.y_test = y_test
+
+
+def create_data_module(df, feature_cols, target_col="has_card", test_size=0.2):
+    X = df.drop(columns=[target_col])[feature_cols]
+    y = df[target_col]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, stratify=y, shuffle=True
+    )
+
+    return DataModule(X_train, X_test, y_train, y_test)
+
+
+data_module = create_data_module(golden_record_df, golden_record_df.drop(columns=["has_card"]).columns)
+
+print(f"Train set size: {len(data_module.X_train)}")
+print(f"Test set size: {len(data_module.X_test)}")
+
+print(f"Train set distribution:\n{data_module.y_train.value_counts(normalize=True)}")
+print(f"Test set distribution:\n{data_module.y_test.value_counts(normalize=True)}")
+```
+
+As we can see the distribution of the target variable is maintained in both sets after the split.
+
+# Model Construction
+
+## Pipeline for Training and Evaluation
+
+The `train_evaluate_model` function is designed to streamline the process of training and evaluating machine learning models. It performs the following steps:
+
+1. **Preprocessing**: The function automatically handles numerical and categorical features, imputing missing values, scaling numerical features, and one-hot encoding categorical features.
+2. **Model Training**: The specified model is trained on the training data.
+3. **Cross-Validation**: The model is evaluated using cross-validation with specified evaluation metrics.
+4. **Model Evaluation**: The model is evaluated on the test set using various metrics, including accuracy, F1 score, AUC-ROC, precision, and recall.
+
+The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
+
+```{python}
+import numpy as np
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import make_scorer, f1_score, roc_auc_score, precision_score, recall_score
+import scikitplot as skplt
+import dalex as dx
+
+
+class Trainer:
+    def __init__(self, data_module, model, cv=10, verbose=False):
+        self.data_module = data_module
+        self.model = model
+        self.cv = cv
+        self.verbose = verbose
+        self.preprocessor = self._create_preprocessor()
+        self.pipeline = None
+        self.train_metrics_report = None
+        self.test_metrics_report = None
+
+    def _create_preprocessor(self):
+        numerical_features = [col for col in self.data_module.X_train.columns if
+                              self.data_module.X_train[col].dtype in ["int64", "float64"]]
+        categorical_features = [col for col in self.data_module.X_train.columns if col not in numerical_features]
+
+        other_features = [col for col in self.data_module.X_train.columns if
+                          col not in numerical_features + categorical_features]
+        if len(other_features) > 0:
+            raise ValueError(f"Columns with unsupported data types found: {other_features}")
+
+        numerical_pipeline = Pipeline(
+            [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
+        )
+
+        categorical_pipeline = Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore")),
+            ]
+        )
+
+        return ColumnTransformer(
+            transformers=[
+                ("num", numerical_pipeline, numerical_features),
+                ("cat", categorical_pipeline, categorical_features),
+            ]
+        )
+
+    def fit(self):
+        model_pipeline = Pipeline([("model", self.model)])
+        self.pipeline = Pipeline([
+            ("preprocessor", self.preprocessor),
+            ("model_pipeline", model_pipeline)
+        ])
+        self.pipeline.fit(self.data_module.X_train, self.data_module.y_train)
+        return self
+
+    def eval_train(self):
+        scoring = {
+            "accuracy": "accuracy",
+            "f1_macro": make_scorer(f1_score),
+            "roc_auc": "roc_auc",
+            "precision": make_scorer(precision_score),
+            "recall": make_scorer(recall_score),
+        }
+        train_metrics_summary = cross_validate(
+            self.pipeline, self.data_module.X_train, self.data_module.y_train, scoring=scoring, cv=self.cv,
+            return_train_score=False, n_jobs=-1, verbose=3 if self.verbose else 0,
+            error_score="raise"
+        )
+        self.train_metrics_report = {
+            metric: {
+                "folds": train_metrics_summary[f"test_{metric}"].tolist(),
+                "mean": train_metrics_summary[f"test_{metric}"].mean(),
+                "std": train_metrics_summary[f"test_{metric}"].std()
+            } for metric in scoring
+        }
+
+        return self
+
+    def eval_test(self):
+        X_test, y_test = self.data_module.X_test, self.data_module.y_test
+        y_pred_proba = self.pipeline.predict_proba(X_test)[:, 1] if hasattr(self.pipeline, "predict_proba") else np.nan
+        test_metrics = {
+            "accuracy": self.pipeline.score(X_test, y_test),
+            "f1_macro": f1_score(y_test, self.pipeline.predict(X_test), average="macro"),
+            "roc_auc": roc_auc_score(y_test, y_pred_proba) if hasattr(self.pipeline, "predict_proba") else np.nan,
+            "precision": precision_score(y_test, self.pipeline.predict(X_test)),
+            "recall": recall_score(y_test, self.pipeline.predict(X_test))
+        }
+        self.test_metrics_report = {metric: test_metrics[metric] for metric in test_metrics}
+
+        return self
+
+    def get_trained_model(self):
+        return self.pipeline
+
+    def get_preprocessor(self):
+        return self.preprocessor
+
+    def get_train_metrics_report(self):
+        return self.train_metrics_report
+
+    def get_test_metrics_report(self):
+        return self.test_metrics_report
+```
+
+```{python}
+from sklearn.metrics import classification_report, precision_recall_curve
+
+
+class Visualizer:
+    def __init__(self, trainer, model_name):
+        self.trainer = trainer
+        self.model_name = model_name
+
+        X_train, X_test, y_train, y_test = (
+            self.trainer.data_module.X_train,
+            self.trainer.data_module.X_test,
+            self.trainer.data_module.y_train,
+            self.trainer.data_module.y_test)
+
+        self.explainer = dx.Explainer(trainer.get_trained_model(), X_test, y_test)
+
+        self.X_test = X_test
+        self.y_true = y_test
+        self.y_test_pred_proba = (trainer.get_trained_model()
+                                  .predict_proba(X_test))
+
+    def plot_validation_metrics(self):
+        train_metrics = self.trainer.get_train_metrics_report()
+        cv = len(train_metrics['accuracy']['folds'])
+
+        metrics = list(train_metrics.keys())
+        fold_scores = {metric: train_metrics[metric]['folds'] for metric in metrics}
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.boxplot(fold_scores.values(), labels=metrics, notch=True, patch_artist=True)
+        ax.set_title(f'{self.model_name}: Validation Metrics Box Plot (CV={cv})')
+        ax.set_xlabel('Metrics')
+        ax.set_ylabel('Score')
+        ax.set_ylim(0, 1)
+        ax.grid(True)
+        fig.show()
+
+    def plot_test_metrics(self):
+        test_metrics = self.trainer.get_test_metrics_report()
+        test_values = list(test_metrics.values())
+        test_names = list(test_metrics.keys())
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.barplot(x=test_names, y=test_values, ax=ax)
+        ax.set_title(f'{self.model_name}: Test Metrics')
+        ax.set_xlabel('Metrics')
+        ax.set_ylabel('Score')
+        for i, v in enumerate(test_values):
+            if np.isnan(v):
+                ax.text(i, 0.5, "N/A", ha='center', va='bottom')
+            else:
+                ax.text(i, v + 0.01, f"{v:.2f}", ha='center', va='bottom')
+        ax.set_ylim(0, 1)
+        ax.grid(True)
+        fig.show()
+
+    def plot_confusion_matrix(self):
+        preds = self.y_test_pred_proba.argmax(axis=1)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        skplt.metrics.plot_confusion_matrix(self.y_true, preds, ax=ax)
+        ax.set_title(f'{self.model_name}: Confusion Matrix')
+
+    def plot_classification_report(self):
+        preds = self.y_test_pred_proba.argmax(axis=1)
+        report = classification_report(self.y_true, preds, output_dict=True)
+
+        report_df = pd.DataFrame(report).transpose()
+        report_df = report_df.round(2)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        table = ax.table(cellText=report_df.values, colLabels=report_df.columns, rowLabels=report_df.index,
+                         cellLoc='center', rowLoc='center', loc='center', fontsize=12)
+        table.auto_set_font_size(False)
+        table.set_fontsize(12)
+        table.scale(1.2, 1.2)
+
+        ax.axis('off')
+        ax.set_title(f'{self.model_name}: Classification Report')
+        fig.show()
+
+    def plot_threshold_optimization(self):
+        precision, recall, thresholds = precision_recall_curve(self.y_true, self.y_test_pred_proba[:, 1])
+        f1_scores = 2 * (precision * recall) / (precision + recall)
+        optimal_idx = np.argmax(f1_scores)
+        optimal_threshold = thresholds[optimal_idx]
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(thresholds, f1_scores[:-1], label='F1-score')
+        ax.axvline(x=optimal_threshold, color='red', linestyle='--',
+                   label=f'Optimal Threshold: {optimal_threshold:.2f}')
+        ax.set_title(f'{self.model_name}: Threshold Optimization')
+        ax.set_xlabel('Threshold')
+        ax.set_ylabel('F1-score')
+        ax.legend()
+        fig.show()
+
+    def plot_roc_curve(self):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        skplt.metrics.plot_roc(self.y_true, self.y_test_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: ROC Curve on Test Set')
+        fig.show()
+
+    def plot_precision_recall_curve(self):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        skplt.metrics.plot_precision_recall(self.y_true, self.y_test_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: Precision-Recall Curve on Test Set')
+        fig.show()
+
+    def plot_lift_curve(self):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        skplt.metrics.plot_lift_curve(self.y_true, self.y_test_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: Lift Curve on Test Set')
+        fig.show()
+
+    def plot_cumulative_gain_curve(self):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        skplt.metrics.plot_cumulative_gain(self.y_true, self.y_test_pred_proba, ax=ax)
+        ax.set_title(f'{self.model_name}: Cumulative Gain Curve on Test Set')
+        fig.show()
+
+    def plot_partial_dependence(self, feature):
+        pdp = self.explainer.model_profile(type='partial', variables=feature)
+        pdp.plot()
+
+    def plot_accumulated_local_effects(self, feature):
+        ale = self.explainer.model_profile(type='accumulated', variables=feature)
+        ale.plot()
+
+    def plot_breakdown(self, observation):
+        breakdown = self.explainer.predict_parts(observation, type='break_down')
+        breakdown.plot()
+
+    def plot_model_explanations(self):
+        # Feature importance
+        feature_importance = self.explainer.model_parts()
+        feature_importance.plot()
+
+        # Model profiles
+        model_profile = self.explainer.model_profile(type='partial')
+        model_profile.plot()
+
+    def visualize_explanations(self, feature_columns=[]):
+        self.plot_model_explanations()
+
+        if not feature_columns:
+            feature_columns = self.trainer.data_module.feature_columns[0]
+
+        # Partial Dependence Plot
+        self.plot_partial_dependence(feature_columns)
+
+        # Accumulated Local Effects
+        self.plot_accumulated_local_effects(feature_columns)
+
+        # Breakdown Plot
+        observation = self.trainer.data_module.X_test.iloc[0]
+        self.plot_breakdown(observation)
+
+        plt.show()
+```
+
+```{python}
+def create_top_n_customers_list(model, data, n) -> pd.DataFrame:
+    """
+    Generate a Top-N list of customers likely to not have a card.
+
+    Args:
+    model (BaseEstimator): A trained scikit-learn model.
+    data (pd.DataFrame): Dataframe containing the features needed by the model.
+    n (int): Number of top customers to retrieve.
+
+    Returns:
+    pd.DataFrame: Dataframe containing the top N customers likely to not have a card.
+    """
+    if not hasattr(model, 'predict_proba'):
+        raise ValueError("Model does not support probability predictions")
+
+    if n > len(data):
+        raise ValueError("N cannot be greater than the number of customers")
+
+    probabilities = model.predict_proba(data)[:, 1]
+
+    results = pd.DataFrame({
+        'Client ID': data['client_id'],
+        'Probability': probabilities
+    })
+
+    results_sorted = results.sort_values(by='Probability', ascending=True).reset_index(drop=True)
+    top_n_results = results_sorted.head(n)
+
+    return top_n_results
+```
+
+## Baseline Model: Logistic Regression
+
+```{python}
+baseline_feature_columns = [
+                               'age',
+                               'client_region'
+                           ] + [col for col in golden_record_df.columns if
+                                'M_' in col and ('_balance' in col or '_volume' in col)]
+
+baseline_data_module = create_data_module(golden_record_df, baseline_feature_columns)
+for i, col in enumerate(baseline_feature_columns):
+    print(i, col)
+```
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+
+baseline_trainer = (Trainer(baseline_data_module,
+                            LogisticRegression(max_iter=10000))
+                    .fit().eval_train())
+
+baseline_visualizer = Visualizer(baseline_trainer, "Baseline Logistic Regression")
+baseline_visualizer.plot_validation_metrics()
+```
+
+In order to possibly improve the model performance, we will include more features in the training data. We will include all features except for the ones that are not relevant for the model training.
+
+After merging the transactional and non-transactional data, we have many columns that are unnecessary for model training. We will remove all columns containing card-related information, except for the `has_card` column. This decision stems from the fact that 50% of our dataset consists of cardholders and the other 50% consists of non-cardholders, which we matched with the cardholders. Therefore, the data in the non-target card-related columns come from the actual cardholders.
+
+Additionally we will remove all columns that contain time-dependent information, such as dates and IDs, as they are not relevant for the model.
+
+```{python}
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.loc[:,
+                   ~golden_record_df.columns.str.contains("card") | golden_record_df.columns.str.contains("has_card")]
+print(
+    f"Removed {num_cols_before - len(golden_record_df.columns)} card-related columns. Now {len(golden_record_df.columns)} columns remain.")
+
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.drop(columns=["loan_granted_date", "birth_date", "account_created"])
+print(
+    f"Removed {num_cols_before - len(golden_record_df.columns)} time-dependent columns. Now {len(golden_record_df.columns)} columns remain.")
+
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.drop(
+    columns=["loan_account_id", "loan_loan_id", "order_account_id", "client_district_name", "disp_id", "account_id",
+             "account_district_name"])
+print(
+    f"Removed {num_cols_before - len(golden_record_df.columns)} ID columns. Now {len(golden_record_df.columns)} columns remain.")
+
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.drop(columns=[col for col in golden_record_df.columns if "std" in col])
+print(
+    f"Removed {num_cols_before - len(golden_record_df.columns)} std columns. Now {len(golden_record_df.columns)} columns remain.")
+
+cols_to_exclude_in_train = ["client_id", "has_card"]
+
+all_cols_data_module = create_data_module(golden_record_df,
+                                          golden_record_df.drop(columns=cols_to_exclude_in_train).columns)
+```
+
+```{python}
+for col in golden_record_df.columns:
+    print(col)
+```
+
+## Candidate Models
+### Logistic Regression
+We will train a logistic regression model with the new feature set and evaluate its performance as it already showed promising results in the baseline model.
+
+```{python}
+log_reg_trainer = (Trainer(all_cols_data_module,
+                           LogisticRegression(max_iter=10000))
+                   .fit().eval_train())
+
+log_reg_visualizer = Visualizer(log_reg_trainer, "Logistic Regression")
+log_reg_visualizer.plot_validation_metrics()
+```
+
+### Random Forest
+We will also train a Random Forest model to see if it can outperform the logistic regression model. Random Forest models are known for their robustness and ability to capture complex relationships in the data.
+
+```{python}
+#| lines_to_next_cell: 0
+from sklearn.ensemble import RandomForestClassifier
+
+rf_model = RandomForestClassifier()
+
+rf_trainer = (Trainer(all_cols_data_module, rf_model)
+              .fit()
+              .eval_train())
+
+rf_visualizer = Visualizer(rf_trainer, "Random Forest")
+rf_visualizer.plot_validation_metrics()
+```
+
+### Decision Tree
+We will also train a Decision Tree model to see how it performs compared to the other models. Decision Trees are known for their interpretability and simplicity.
+
+```{python}
+#| lines_to_next_cell: 0
+from sklearn.tree import DecisionTreeClassifier
+
+decision_tree_model = DecisionTreeClassifier(max_depth=5)
+
+decision_tree_trainer = (Trainer(all_cols_data_module, decision_tree_model)
+                         .fit()
+                         .eval_train())
+
+decision_tree_visualizer = Visualizer(decision_tree_trainer, "Decision Tree")
+decision_tree_visualizer.plot_validation_metrics()
+```
+
+```{python}
+#| lines_to_next_cell: 0
+from sklearn.ensemble import GradientBoostingClassifier
+
+gradient_boost_model = GradientBoostingClassifier(
+    n_estimators=100, learning_rate=0.1
+)
+
+gradient_boost_trainer = (Trainer(all_cols_data_module, gradient_boost_model)
+                          .fit()
+                          .eval_train())
+
+gradient_boost_visualizer = Visualizer(gradient_boost_trainer, "Gradient Boosting")
+gradient_boost_visualizer.plot_validation_metrics()
+```
+
+# Model Comparison & Selection
+
+# Model Optimization
+
+# Model Explanation & Reduction
+
+# Conclusion
+
