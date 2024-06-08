@@ -1,18 +1,3 @@
----
-title: AML Mini-Challenge - Credit Card Affinity Modelling
-author: Dominik Filliger & Noah Leuenberger
-format:
-  html:
-    toc: true
-    number-sections: true
-    code-overflow: scroll
-    code-copy: hover
-execute:
-  echo: true
-  output: true
-jupyter: python3
----
-
 ```{python}
 ## DEPENDENCY #TODO REMOVE FOR MERGE
 import pandas as pd

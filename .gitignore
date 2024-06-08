@@ -15,3 +15,6 @@ data/golden_record.csv
 /temp/
 
 temp_overview_files/
+/.quarto/
+
+exports/
