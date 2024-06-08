@@ -1,0 +1,1008 @@
+---
+title: AML Mini-Challenge - Credit Card Affinity Modelling
+jupyter:
+  jupytext:
+    formats: 'ipynb,py:percent'
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+    path: /Users/dmnk/PycharmProjects/fhnw-aml-mc/venv/share/jupyter/kernels/python3
+author: Dominik Filliger & Noah Leuenberger
+format:
+  html:
+    toc: true
+---
+
+```{python}
+import pandas as pd
+from datetime import datetime
+
+import numpy as np
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+sns.set_theme()
+#plt.style.use('seaborn-white')
+#plt.style.use('ggplot')
+```
+
+## Helper Functions
+
+```{python}
+def plot_categorical_variables(df, categorical_columns, fill_na_value='NA'):
+    """
+    Plots count plots for categorical variables in a DataFrame, filling NA values with a specified string.
+    
+    Parameters:
+    - df: pandas.DataFrame containing the data.
+    - categorical_vars: list of strings, names of the categorical variables in df to plot.
+    - fill_na_value: string, the value to use for filling NA values in the categorical variables.
+    """
+    # Fill NA values in the specified categorical variables
+    for var in categorical_columns:
+        if df[var].isna().any():
+            df[var] = df[var].fillna(fill_na_value)
+
+    total = float(len(df))
+    fig, axes = plt.subplots(nrows=len(categorical_columns), figsize=(14, len(categorical_columns) * 4.5))
+
+    if len(categorical_columns) == 1:  # If there's only one categorical variable, wrap axes in a list
+        axes = [axes]
+
+    for i, var in enumerate(categorical_columns):
+        ax = sns.countplot(x=var, data=df, ax=axes[i], order=df[var].value_counts().index)
+
+        axes[i].set_title(f'Distribution of {var}')
+        axes[i].set_ylabel('Count')
+        axes[i].set_xlabel(var)
+
+        for p in ax.patches:
+            height = p.get_height()
+            ax.text(p.get_x() + p.get_width() / 2.,
+                    height + 3,
+                    '{:1.2f}%'.format((height / total) * 100),
+                    ha="center")
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_numerical_distributions(df, numerical_columns, kde=True, bins=30):
+    """
+    Plots the distribution of all numerical variables in a DataFrame.
+    
+    Parameters:
+    - df: pandas.DataFrame containing the data.
+    """
+
+    # Determine the number of rows needed for subplots based on the number of numerical variables
+    nrows = len(numerical_columns)
+
+    # Create subplots
+    fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(8, 5 * nrows))
+
+
+    if nrows == 1:  # If there's only one numerical variable, wrap axes in a list
+        axes = [axes]
+
+    for i, var in enumerate(numerical_columns):
+        sns.histplot(df[var], ax=axes[i], kde=kde, bins=bins)
+        axes[i].set_title(f'Distribution of {var}')
+        axes[i].set_xlabel(var)
+        axes[i].set_ylabel('Frequency')
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_date_monthly_counts(df, date_column, title):
+    """
+    Plots the monthly counts of a date column in a DataFrame.
+    
+    Parameters:
+    - df: pandas.DataFrame containing the data.
+    - date_column: string, name of the date column in df to plot.
+    - title: string, title of the plot.
+    """
+    df[date_column] = pd.to_datetime(df[date_column])
+    df['month'] = df[date_column].dt.to_period('M')
+
+    monthly_counts = df['month'].value_counts().sort_index()
+    monthly_counts.plot(kind='bar', figsize=(14, 6))
+    plt.title(title)
+    plt.xlabel('Month')
+    plt.ylabel('Count')
+    plt.show()
+
+def add_percentage_labels(ax, hue_order):
+    for p in ax.patches:
+        height = p.get_height()
+        width = p.get_width()
+        x = p.get_x()
+        y = p.get_y()
+        label_text = f'{height:.1f}%'
+        label_x = x + width / 2
+        label_y = y + height / 2
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=9, color='white', weight='bold')
+```
+
+```{python}
+from collections import OrderedDict
+data_reduction = OrderedDict()
+```
+
+# Data Import & Wrangling
+
+```{python}
+def remap_values(df, column, mapping):
+    # assert that all values in the column are in the mapping except for NaN
+    assert df[column].dropna().isin(mapping.keys()).all()
+    
+    df[column] = df[column].map(mapping, na_action='ignore')
+    return df
+
+def map_empty_to_nan(df, column):
+    if df[column].dtype != 'object':
+        return df
+
+    df[column] = df[column].replace(r'^\s*$', np.nan, regex=True)
+    return df
+
+def read_csv(file_path, sep=";", dtypes=None):
+    df = pd.read_csv(file_path, sep=sep, dtype=dtypes)
+    
+    for col in df.columns:
+        df = map_empty_to_nan(df, col)
+        
+    return df
+```
+
+## Accounts
+
+```{python}
+accounts_df = read_csv("data/account.csv")
+
+# Translated frequency from Czech to English
+# according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
+accounts_df = remap_values(accounts_df, 'frequency', {
+    "POPLATEK MESICNE": "MONTHLY_ISSUANCE",
+    "POPLATEK TYDNE": "WEEKLY_ISSUANCE",
+    "POPLATEK PO OBRATU": "ISSUANCE_AFTER_TRANSACTION"
+})
+
+accounts_df['date'] = pd.to_datetime(accounts_df['date'], format='%y%m%d')
+
+accounts_df.rename(columns={'date': 'account_created',
+                         'frequency': 'account_frequency'}, inplace=True)
+
+data_reduction["Total number of accounts"] = len(accounts_df)
+accounts_df.info()
+```
+
+```{python}
+# todo add some basic eda here
+accounts_df.head()
+```
+
+```{python}
+accounts_df.nunique()
+```
+
+```{python}
+plot_categorical_variables(accounts_df, ['account_frequency'])
+```
+
+```{python}
+plot_numerical_distributions(accounts_df, ['account_created'])
+```
+
+## Clients
+
+```{python}
+clients_df = read_csv("data/client.csv")
+
+def parse_birth_number(birth_number):
+    birth_number_str = str(birth_number)
+
+    # Extract year, month, and day from birth number from string
+    # according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
+    year = int(birth_number_str[:2])
+    month = int(birth_number_str[2:4])
+    day = int(birth_number_str[4:6])
+
+    # Determine sex based on month and adjust month for female clients
+    # according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
+    if month > 50:
+        sex = "Female"
+        month -= 50
+    else:
+        sex = "Male"
+
+    # Validate date
+    assert 1 <= month <= 12
+    assert 1 <= day <= 31
+    assert 0 <= year <= 99
+
+    if month in [4, 6, 9, 11]:
+        assert 1 <= day <= 30
+    elif month == 2:
+        assert 1 <= day <= 29
+    else:
+        assert 1 <= day <= 31
+
+    # Assuming all dates are in the 1900s
+    birth_date = datetime(1900 + year, month, day)
+    return pd.Series([sex, birth_date])
+
+
+clients_df[['sex', 'birth_date']] = clients_df['birth_number'].apply(parse_birth_number)
+
+# Calculate 'age' assuming the reference year is 1999
+clients_df['age'] = clients_df['birth_date'].apply(lambda x: 1999 - x.year)
+
+# Drop 'birth_number' column as it is no longer needed
+clients_df = clients_df.drop(columns=['birth_number'])
+
+clients_df.info()
+```
+
+```{python}
+# todo add some basic eda here
+clients_df.head()
+```
+
+```{python}
+clients_df.describe()
+```
+
+```{python}
+plot_numerical_distributions(clients_df, ['birth_date', 'age'])
+```
+
+## Dispositions
+
+```{python}
+dispositions_df = read_csv("data/disp.csv")
+dispositions_df.info()
+```
+
+```{python}
+dispositions_df.head()
+```
+
+```{python}
+dispositions_df.describe()
+```
+
+```{python}
+plot_categorical_variables(dispositions_df, ['type'])
+```
+
+As the goal of this model is to address accounts and not client directly we will focus on the clients which own an account and focus solely on them.
+
+```{python}
+dispositions_df = dispositions_df[dispositions_df['type'] == 'OWNER']
+```
+
+## Orders
+
+```{python}
+orders_df = read_csv("data/order.csv")
+
+# Translated from Czech to English
+# according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
+orders_df = remap_values(orders_df, 'k_symbol', {
+    "POJISTNE": "Insurance_Payment",
+    "SIPO": "Household",
+    "LEASING": "Leasing",
+    "UVER": "Loan_Payment"
+})
+
+orders_df['account_to'] = orders_df['account_to'].astype('category')
+
+orders_df = orders_df.rename(columns={'amount': 'debited_amount'})
+
+orders_df.info()
+```
+
+```{python}
+orders_df.head()
+```
+
+```{python}
+orders_df.describe()
+```
+
+```{python}
+orders_df.nunique()
+```
+
+There appear to be as many order ids as there are rows.
+
+```{python}
+plot_categorical_variables(orders_df, ['k_symbol', 'bank_to'])
+```
+
+```{python}
+plot_numerical_distributions(orders_df, ['debited_amount'])
+```
+
+## Transactions
+
+```{python}
+# column 8 is the 'bank' column which contains NaNs and must be read as string
+transactions_df = read_csv("data/trans.csv", dtypes={8: str})
+
+transactions_df['date'] = pd.to_datetime(transactions_df['date'], format='%y%m%d')
+
+# Translated type, operations and characteristics from Czech to English
+# according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
+transactions_df = remap_values(transactions_df, 'type', {
+    "VYBER": "Withdrawal", # Also withdrawal as it is against the documentation present in the dataset
+    "PRIJEM": "Credit",
+    "VYDAJ": "Withdrawal"
+})
+
+transactions_df = remap_values(transactions_df, 'operation', {
+    "VYBER KARTOU": "Credit Card Withdrawal",
+    "VKLAD": "Credit in Cash",
+    "PREVOD Z UCTU": "Collection from Another Bank",
+    "VYBER": "Withdrawal in Cash",
+    "PREVOD NA UCET": "Remittance to Another Bank"
+})
+
+transactions_df = remap_values(transactions_df, 'k_symbol', {
+    "POJISTNE": "Insurance Payment",
+    "SLUZBY": "Payment on Statement",
+    "UROK": "Interest Credited",
+    "SANKC. UROK": "Sanction Interest",
+    "SIPO": "Household",
+    "DUCHOD": "Old-age Pension",
+    "UVER": "Loan Payment"
+})
+
+# Set the amount to negative for withdrawals and positive for credits
+transactions_df['amount'] = np.where(transactions_df['type'] == "Credit", transactions_df['amount'], -transactions_df['amount'])
+
+transactions_df.rename(columns={'type': 'transaction_type'}, inplace=True)
+
+transactions_df.info()
+```
+
+```{python}
+transactions_df.head()
+```
+
+```{python}
+transactions_df.describe()
+```
+
+```{python}
+plot_categorical_variables(transactions_df, ['transaction_type', 'operation', 'k_symbol'])
+```
+
+```{python}
+plot_numerical_distributions(transactions_df, ['date', 'amount', 'balance'])
+```
+
+Looking at the distributions of the transaction table we can see that the count of transactions per year increase over time. So we can conclude that the bank has a growing client base.
+
+However, the other plots are not very useful. For one the transaction amount seems to be very sparse, ranging from values between -80000 and 80000.
+
+The balance distribution also showcases that there are accounts with a negative balance after a transaction, which would only make sense if debt is also included in this value.
+
+According to description of the field balance: "balance after transaction"
+
+```{python}
+# Getting a list of unique years from the dataset
+transactions_df['year'] = transactions_df['date'].dt.year
+transactions_df['month'] = transactions_df['date'].dt.month
+
+months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+years = sorted(transactions_df['year'].unique())
+
+# Creating a figure with subplots for each year: one row for each year with two plots (box plot and bar chart)
+fig, axs = plt.subplots(len(years) * 2, 1, figsize=(15, 6 * len(years)), sharex=True, gridspec_kw={'height_ratios': [3, 1] * len(years)})
+
+for i, year in enumerate(years):
+    # Filter transactions for the current year
+    yearly_transactions = transactions_df[transactions_df['year'] == year]
+
+    # Preparing data for the box plot: a list of amounts for each month for the current year
+    amounts_per_month_yearly = [yearly_transactions[yearly_transactions['month'] == month]['amount'] for month in range(1, 13)]
+
+    # Preparing data for the bar chart for the current year
+    monthly_summary_yearly = yearly_transactions.groupby('month').agg(TotalAmount=('amount', 'sum'), TransactionCount=('amount', 'count')).reset_index()
+
+    # Box plot for transaction amounts by month for the current year
+    axs[i*2].boxplot(amounts_per_month_yearly, patch_artist=True)
+    # now with seaborn
+    # sns.boxplot(data=yearly_transactions, x='month', y='amount', ax=axs[i*2])
+    axs[i*2].set_title(f'Transaction Amounts Per Month in {year} (Box Plot)')
+    axs[i*2].set_yscale('symlog')
+    axs[i*2].set_ylabel('Transaction Amounts (log scale)')
+    axs[i*2].grid(True, which='both')
+
+    # Bar chart for transaction count by month for the current year
+    axs[i*2 + 1].bar(monthly_summary_yearly['month'], monthly_summary_yearly['TransactionCount'], color='tab:red', alpha=0.6)
+    axs[i*2 + 1].set_ylabel('Transaction Count')
+    axs[i*2 + 1].grid(True, which='both')
+
+# Setting x-ticks and labels for the last bar chart (shared x-axis for all)
+axs[-1].set_xticks(range(1, 13))
+axs[-1].set_xticklabels(months)
+axs[-1].set_xlabel('Month')
+
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+# Importing required libraries for visualization
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Assuming 'transactions' DataFrame already contains 'year' and 'month' columns
+# and is ready for visualization
+
+# Getting a list of unique years and defining month labels
+years = sorted(transactions_df['year'].unique())
+months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# Adjusting the figure layout to place visualizations for each year next to each other
+fig, axs = plt.subplots(2, len(years), figsize=(40 * len(years) / 2, 30), sharey='row', gridspec_kw={'height_ratios': [3, 1]})
+
+for i, year in enumerate(years):
+    # Filter transactions for the current year
+    yearly_transactions = transactions_df[transactions_df['year'] == year]
+
+    # Preparing data for the box plot: a list of amounts for each month for the current year
+    amounts_per_month_yearly = [yearly_transactions[yearly_transactions['month'] == month]['amount'] for month in range(1, 13)]
+
+    # Preparing data for the bar chart for the current year
+    monthly_summary_yearly = yearly_transactions.groupby('month').agg(TotalAmount=('amount', 'sum'), TransactionCount=('amount', 'count')).reset_index()
+
+    # Selecting the appropriate axes for multiple or single year scenarios
+    ax_box = axs[0, i] if len(years) > 1 else axs[0]
+    ax_bar = axs[1, i] if len(years) > 1 else axs[1]
+    
+    ax_box.boxplot(amounts_per_month_yearly, patch_artist=True)
+    ax_box.set_title(f'{year} (Box Plot)')
+    ax_box.set_yscale('symlog')
+    ax_box.set_ylabel('Transaction Amounts (log scale)')
+    ax_box.grid(True, which='both')
+
+    ax_bar.bar(monthly_summary_yearly['month'], monthly_summary_yearly['TransactionCount'], color='tab:red', alpha=0.6)
+    ax_bar.set_ylabel('Transaction Count')
+    ax_bar.grid(True, which='both')
+
+    # Setting common x-ticks and labels for all axes
+    ax_bar.set_xticks(range(1, 13))
+    ax_bar.set_xticklabels(months)
+
+# Setting a common x-label for the entire figure
+fig.text(0.5, 0.04, 'Month', ha='center')
+
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+negative_balances = transactions_df[transactions_df['balance'] < 0]
+plot_numerical_distributions(negative_balances, ['balance', 'amount'])
+print(f"Number of transactions with negative balance: {len(negative_balances)}")
+```
+
+There appear to be 2999 transactions which have a negative balance, therefore after the transaction the account balance was negative. This implies that these accounts are in some kind of debt.
+
+## Loans
+
+```{python}
+loans_df = read_csv("data/loan.csv")
+
+loans_df['date'] = pd.to_datetime(loans_df['date'], format='%y%m%d')
+
+loans_df['status'] = loans_df['status'].map({
+    "A": "Contract finished, no problems",
+    "B": "Contract finished, loan not paid",
+    "C": "Contract running, OK thus-far",
+    "D": "Contract running, client in debt"
+})
+
+loans_df.rename(columns={
+    'date': 'granted_date',
+    'amount': 'amount',
+    'duration': 'duration',
+    'payments': 'monthly_payments',
+    'status': 'status'
+}, inplace=True)
+
+loans_df.info()
+```
+
+```{python}
+# todo add some basic eda here
+loans_df.head()
+```
+
+```{python}
+loans_df.describe()
+```
+
+```{python}
+loans_df.nunique()
+```
+
+It seems as if one account can have at max one loan.
+
+```{python}
+plot_categorical_variables(loans_df, ['duration', 'status'])
+```
+
+The distribution of durations seems to be even.
+
+```{python}
+plot_numerical_distributions(loans_df, ['granted_date'])
+```
+
+## Credit Cards
+
+```{python}
+cards_df = read_csv("data/card.csv")
+
+cards_df['issued'] = pd.to_datetime(cards_df['issued'], format='%y%m%d %H:%M:%S').dt.date
+
+cards_df.info()
+```
+
+```{python}
+cards_df.head()
+```
+
+```{python}
+cards_df.describe()
+```
+
+```{python}
+plot_categorical_variables(cards_df, ['type'])
+```
+
+```{python}
+plot_numerical_distributions(cards_df, ['issued'])
+```
+
+## Demographic data
+
+```{python}
+districts_df = read_csv("data/district.csv")
+
+# Rename columns
+# according to https://sorry.vse.cz/~berka/challenge/PAST/index.html
+districts_df.rename(columns={
+    'A1': 'district_id',
+    'A2': 'district_name',
+    'A3': 'region',
+    'A4': 'inhabitants',
+    'A5': 'small_municipalities',
+    'A6': 'medium_municipalities',
+    'A7': 'large_municipalities',
+    'A8': 'huge_municipalities',
+    'A9': 'cities',
+    'A10': 'ratio_urban_inhabitants',
+    'A11': 'average_salary',
+    'A12': 'unemployment_rate_1995',
+    'A13': 'unemployment_rate_1996',
+    'A14': 'entrepreneurs_per_1000_inhabitants',
+    'A15': 'crimes_committed_1995',
+    'A16': 'crimes_committed_1996'
+}, inplace=True)
+
+for col in ['unemployment_rate_1995', 'unemployment_rate_1996', 'crimes_committed_1995', 'crimes_committed_1996']:
+    districts_df[col] = pd.to_numeric(districts_df[col], errors='coerce')
+
+districts_df.info()
+```
+
+It appears as if there is 1 null value for unemployment rate in 1995 and crimes committed in 1995.
+
+```{python}
+# todo add some basic eda here
+districts_df.head()
+```
+
+```{python}
+districts_df.describe()
+```
+
+```{python}
+districts_df.nunique()
+```
+
+```{python}
+plot_numerical_distributions(districts_df, ['crimes_committed_1995'])
+```
+
+```{python}
+plot_categorical_variables(districts_df, ['region'])
+```
+
+We need to differentiate between the domicile of the client and account, as they can be different.
+
+# Relationships
+
+Following the documentation of the dataset, there are multiple relationships that need to be validated. https://sorry.vse.cz/\~berka/challenge/PAST/index.html
+
+The ERD according to the descriptions on https://sorry.vse.cz/\~berka/challenge/PAST/index.html
+
+[![](https://mermaid.ink/img/pako:eNqtV1Fv4jgQ_itWXu6l7SZ0gQatTsqGdhddCxVQrXSqFJnEgLWJnbOd7bGl__3GTgA3JGyvWh7ajPPNZ898nrHz7MQ8Ic7AIWJI8Urg7JEh-AVhOHkYz9FzaeqfVIKyFcJxzAumIpqg-7_QoxOUNhoNH50jcEL1Q2zQNxo9rAZq8AQrUv45EIaCYEU5Q0MYb-BeCvJPQVi8AZ-RlAVmMUE3u8Gdw0v5L7wdXTeGE6eUWNGExmxa3YIKtY5YkS2IAOBnbbYt7S1hVwsbjmb3k9loPpqMG1YHRPl-bUCSc0lNThqzfYjlpjWWYxVvfqmi2uRamMkTI-LDgySiFsNkOryeNqyei4SI_fIn2voNq1lg9j1SHGBTEtPcxPgZxk7w1tAVve2wTDlWCGdmWkg1WVBFEhRkdWDF_D2Sm2zBU8De402mWcM1FjhWRNCfZt_WkjSfBuNZELYIrQRmcp-qubaAq1XptyXMriqbsmXXVjJD3SVUffhG1ToR-AmnDVCeE1EW52vmO2gmJ9JqQ49TW4IXODWVDCVWPQVLSCqyfE_rYU_SpkltOxkVhYLt_YudZAFrm6hS-XYSNMkLkbG9urdg_C5ZDdcXiFjv1rqutewb7HHaKbxMir2cBjWs7GO2vNztEpB3nKl1ukFVAciGgKTCqpA71pmx6p05mA6b-jIWyaErg9F6wOR2lz3dIHc7XNPN4fkoqxTOEUjkbsbSstN66Nrz6SicN7fsfe-_P3HkVXCGM2KDxmA3wARZlfJMzUNdP8YjvowoW2PoW7iUZ8wvEF-i0WGw2SsrGIXOiFNIHJHRE9S9zRSlKuq6rtb7FRB9QjD8PkpwhJ4ceb7vH_PCy3P95n3UHbfk9hu59dtz_93kKxV5wNCQjD_NeDNrXEL2ioTGPi4tU3LaoRAL3S5eqfmgx2wx0VTDG8r9B7TmFYkkdE-h70ZBOYBmZuDYoWAky1NuajiCNZDI7-oJrWE9F0F_-N03efdavHvN6QGEILkgjBRCRnCwmBzXwr-2QQhAyGvPN88yqqAhRrGgGeho4gnNcz2IU14926tndYBaD9huz8_58_7KPDDtLsa6I4_2lVpHVxfSgSlpSROY5ADeUVVY-46oHQIpeUzNBPqU3nlVlP_PyYZpz-227Mja5SuWLSsqb3wa8wUk0bK3Ie1rTxlsDNfCZvS2PD4Hpv8y9BW2ssY5Z05GRIZpAt8ppuE-OmpNdJ_U0IQscZGaI-0FoLhQfLZhsTNQoiBnTpHrzl593DiDJU4ljOaY_c15tgPpGw8Xd-WnkPkiMhBn8Oz86wyuOhf9bsf96Lndvuu5ff_M2TgDz-1ddK763qXvel237131X86cn4bUvbi67PU6Xt_z3Y--e9ntv_wHEyE3kA?type=png)](https://mermaid.live/edit#pako:eNqtV1Fv4jgQ_itWXu6l7SZ0gQatTsqGdhddCxVQrXSqFJnEgLWJnbOd7bGl__3GTgA3JGyvWh7ajPPNZ898nrHz7MQ8Ic7AIWJI8Urg7JEh-AVhOHkYz9FzaeqfVIKyFcJxzAumIpqg-7_QoxOUNhoNH50jcEL1Q2zQNxo9rAZq8AQrUv45EIaCYEU5Q0MYb-BeCvJPQVi8AZ-RlAVmMUE3u8Gdw0v5L7wdXTeGE6eUWNGExmxa3YIKtY5YkS2IAOBnbbYt7S1hVwsbjmb3k9loPpqMG1YHRPl-bUCSc0lNThqzfYjlpjWWYxVvfqmi2uRamMkTI-LDgySiFsNkOryeNqyei4SI_fIn2voNq1lg9j1SHGBTEtPcxPgZxk7w1tAVve2wTDlWCGdmWkg1WVBFEhRkdWDF_D2Sm2zBU8De402mWcM1FjhWRNCfZt_WkjSfBuNZELYIrQRmcp-qubaAq1XptyXMriqbsmXXVjJD3SVUffhG1ToR-AmnDVCeE1EW52vmO2gmJ9JqQ49TW4IXODWVDCVWPQVLSCqyfE_rYU_SpkltOxkVhYLt_YudZAFrm6hS-XYSNMkLkbG9urdg_C5ZDdcXiFjv1rqutewb7HHaKbxMir2cBjWs7GO2vNztEpB3nKl1ukFVAciGgKTCqpA71pmx6p05mA6b-jIWyaErg9F6wOR2lz3dIHc7XNPN4fkoqxTOEUjkbsbSstN66Nrz6SicN7fsfe-_P3HkVXCGM2KDxmA3wARZlfJMzUNdP8YjvowoW2PoW7iUZ8wvEF-i0WGw2SsrGIXOiFNIHJHRE9S9zRSlKuq6rtb7FRB9QjD8PkpwhJ4ceb7vH_PCy3P95n3UHbfk9hu59dtz_93kKxV5wNCQjD_NeDNrXEL2ioTGPi4tU3LaoRAL3S5eqfmgx2wx0VTDG8r9B7TmFYkkdE-h70ZBOYBmZuDYoWAky1NuajiCNZDI7-oJrWE9F0F_-N03efdavHvN6QGEILkgjBRCRnCwmBzXwr-2QQhAyGvPN88yqqAhRrGgGeho4gnNcz2IU14926tndYBaD9huz8_58_7KPDDtLsa6I4_2lVpHVxfSgSlpSROY5ADeUVVY-46oHQIpeUzNBPqU3nlVlP_PyYZpz-227Mja5SuWLSsqb3wa8wUk0bK3Ie1rTxlsDNfCZvS2PD4Hpv8y9BW2ssY5Z05GRIZpAt8ppuE-OmpNdJ_U0IQscZGaI-0FoLhQfLZhsTNQoiBnTpHrzl593DiDJU4ljOaY_c15tgPpGw8Xd-WnkPkiMhBn8Oz86wyuOhf9bsf96Lndvuu5ff_M2TgDz-1ddK763qXvel237131X86cn4bUvbi67PU6Xt_z3Y--e9ntv_wHEyE3kA)
+
+This ERD shows how the data appears in the dataset:
+
+[![](https://mermaid.ink/img/pako:eNqtV99P2zAQ_lesvOyFbjCJSq2mSSHlRzRoUVq0F6TITdzWIrEz2xnqgP99ZydNTeIUhOgD5JzvPvvufJ-dJy_hKfHGHhETitcC5_cMwc8PgtnddIGeKlP_pBKUrRFOEl4yFdMU3f5C955f2Sic3HsdcEr1Q2LQFxo9qQda8BQrUv3ZEwaCYEU5QxMYd3CvBPlTEpZswSeUssQsIehiN7hzeKn-BdfhuTOcJKPEiiYwpmt1SyrUJmZlviQCgGfa7Fvae8KuFzYJ57ezebgIZ1PH6oCoaNYGJAWX1OTEme19LBe9sXSrePFmFdW20IWZPTIivt1JIloxzKLJeeRYPRcpEc3yZ9r6hNUsMXuIFQdYRBJamBjPYOwAbwtd09sOq4xjhXBupoVUkyVVJEV-3gbWzA-x3OZLngH2Fm9zzRpssMCJIoL-M_u2laRF5E_nftBTaCUwk02qFtoCrt5Kvy9hdlfZlD27ti4z9F1K1bffVG1SgR9x5oDygoiqOV8z34CYHEirDe2mtgIvcWY6GVqsfvJXkFRk-R6uhz1JX01a28lUUSjY3m_sJAvY2kR1la9nvqu8EBlrqnsNxmeV1XBdQsR6t7br2sq-wXbTTuFlWjblNKhJbXfZimq3S0DecKY22RbVDSAdAUmFVSl3rHNjtZXZjyYuXcYi3asyGL0HTGGr7GGB3O1wTbeA505WKZwjkMjdjJVlp3Wv2osoDBZuyW60__bAkVfDGc6JDZqC7YAJsq7KE5mHdv0Yj_kqpmyDQbdwVZ4p_4r4CoX7QbdXXjIKyogzSByR8SP0vc0UZyo-PT7W9X4FRD8QDH-MEhxBk-OT0WjU5YWXA_3mY9TfjyvukZNbvx2MPky-VvEJMDiS8dOMu1mTCtJUJDB2t7VMy2mHUiy1XLyq5p0es4uJIg13tPtfkOY1iSWop9B3I78aQHMz0HUoGcmLjJsejmENJB6d6gmtYT0XQV9Gp-_yHvZ4D93pAYQghSCMlELGcLCYHLfCP7dBCEDopD_fPM-pAkGME0FzqKOJJzDP7SAOeQ1tr6GlAC0NeH4eDPhTc2UeG7lLsFbksOnUNrq-kI5NS0uawiR78I6qxtp3RO3gS8kTaibQp_TOq6bUTs_P73WyYbWnUWTtcoVlz4qqG5_GXEJJdNn7kPa1pwo2gWuhEw1Tm-NzbPSXoSvYyhrnHXk5ETmmKXynGMG999SGaJ3U0JSscJmZI-0FoLhUfL5liTdWoiRHXlloZa8_brzxCmcSRvUVh4ub6tsn4WxF197LfwBRISI?type=png)](https://mermaid.live/edit#pako:eNqtV99P2zAQ_lesvOyFbjCJSq2mSSHlRzRoUVq0F6TITdzWIrEz2xnqgP99ZydNTeIUhOgD5JzvPvvufJ-dJy_hKfHGHhETitcC5_cMwc8PgtnddIGeKlP_pBKUrRFOEl4yFdMU3f5C955f2Sic3HsdcEr1Q2LQFxo9qQda8BQrUv3ZEwaCYEU5QxMYd3CvBPlTEpZswSeUssQsIehiN7hzeKn-BdfhuTOcJKPEiiYwpmt1SyrUJmZlviQCgGfa7Fvae8KuFzYJ57ezebgIZ1PH6oCoaNYGJAWX1OTEme19LBe9sXSrePFmFdW20IWZPTIivt1JIloxzKLJeeRYPRcpEc3yZ9r6hNUsMXuIFQdYRBJamBjPYOwAbwtd09sOq4xjhXBupoVUkyVVJEV-3gbWzA-x3OZLngH2Fm9zzRpssMCJIoL-M_u2laRF5E_nftBTaCUwk02qFtoCrt5Kvy9hdlfZlD27ti4z9F1K1bffVG1SgR9x5oDygoiqOV8z34CYHEirDe2mtgIvcWY6GVqsfvJXkFRk-R6uhz1JX01a28lUUSjY3m_sJAvY2kR1la9nvqu8EBlrqnsNxmeV1XBdQsR6t7br2sq-wXbTTuFlWjblNKhJbXfZimq3S0DecKY22RbVDSAdAUmFVSl3rHNjtZXZjyYuXcYi3asyGL0HTGGr7GGB3O1wTbeA505WKZwjkMjdjJVlp3Wv2osoDBZuyW60__bAkVfDGc6JDZqC7YAJsq7KE5mHdv0Yj_kqpmyDQbdwVZ4p_4r4CoX7QbdXXjIKyogzSByR8SP0vc0UZyo-PT7W9X4FRD8QDH-MEhxBk-OT0WjU5YWXA_3mY9TfjyvukZNbvx2MPky-VvEJMDiS8dOMu1mTCtJUJDB2t7VMy2mHUiy1XLyq5p0es4uJIg13tPtfkOY1iSWop9B3I78aQHMz0HUoGcmLjJsejmENJB6d6gmtYT0XQV9Gp-_yHvZ4D93pAYQghSCMlELGcLCYHLfCP7dBCEDopD_fPM-pAkGME0FzqKOJJzDP7SAOeQ1tr6GlAC0NeH4eDPhTc2UeG7lLsFbksOnUNrq-kI5NS0uawiR78I6qxtp3RO3gS8kTaibQp_TOq6bUTs_P73WyYbWnUWTtcoVlz4qqG5_GXEJJdNn7kPa1pwo2gWuhEw1Tm-NzbPSXoSvYyhrnHXk5ETmmKXynGMG999SGaJ3U0JSscJmZI-0FoLhUfL5liTdWoiRHXlloZa8_brzxCmcSRvUVh4ub6tsn4WxF197LfwBRISI)
+
+```{python}
+# Verify 1:1 relationships between CLIENT, LOAN and DISPOSITION
+assert dispositions_df['client_id'].is_unique, "Each client_id should appear exactly once in the DISPOSITION DataFrame."
+assert loans_df['account_id'].is_unique, "Each account_id should appear exactly once in the LOAN DataFrame."
+
+# Verify 1:M relationships between ACCOUNT and DISPOSITION
+#assert dispositions['account_id'].is_unique == False, "An account_id should appear more than once in the DISPOSITION DataFrame."
+assert dispositions_df['account_id'].is_unique == True, "An account_id should appear once in the DISPOSITION DataFrame."
+# TODO check if in accordance to decision to remove disponents from dispositions
+
+# Verify each district_id in ACCOUNT and CLIENT exists in DISTRICT
+assert set(accounts_df['district_id']).issubset(
+    set(districts_df['district_id'])), "All district_ids in ACCOUNT should exist in DISTRICT."
+assert set(clients_df['district_id']).issubset(
+    set(districts_df['district_id'])), "All district_ids in CLIENT should exist in DISTRICT."
+
+# Verify each account_id in DISPOSITION, ORDER, TRANSACTION, and LOAN exists in ACCOUNT
+assert set(dispositions_df['account_id']).issubset(
+    set(accounts_df['account_id'])), "All account_ids in DISPOSITION should exist in ACCOUNT."
+assert set(orders_df['account_id']).issubset(
+    set(accounts_df['account_id'])), "All account_ids in ORDER should exist in ACCOUNT."
+assert set(transactions_df['account_id']).issubset(
+    set(accounts_df['account_id'])), "All account_ids in TRANSACTION should exist in ACCOUNT."
+assert set(loans_df['account_id']).issubset(
+    set(accounts_df['account_id'])), "All account_ids in LOAN should exist in ACCOUNT."
+
+# Verify each client_id in DISPOSITION exists in CLIENT
+assert set(dispositions_df['client_id']).issubset(
+    set(clients_df['client_id'])), "All client_ids in DISPOSITION should exist in CLIENT."
+
+# Verify each disp_id in CARD exists in DISPOSITION
+assert set(cards_df['disp_id']).issubset(set(dispositions_df['disp_id'])), "All disp_ids in CARD should exist in DISPOSITION."
+```
+
+# Non-transactional Data
+
+```{python}
+orders_pivot_df = orders_df.pivot_table(index='account_id',
+                                        columns='k_symbol',
+                                        values='debited_amount',
+                                        aggfunc='sum',
+                                        fill_value=0)
+
+orders_pivot_df.columns = [f'k_symbol_debited_sum_{col.lower()}' for col in orders_pivot_df.columns]
+
+# TODO: find something better than this
+orders_pivot_df = orders_pivot_df.reset_index() # Use created index as account_id
+orders_pivot_df.head()
+```
+
+```{python}
+def merge_non_transactional_data(clients, districts, dispositions, accounts, orders, loans, cards):
+    # Rename district_id for clarity in clients and accounts DataFrames
+    clients = clients.rename(columns={'district_id': 'client_district_id'})
+    accounts = accounts.rename(columns={'district_id': 'account_district_id'})
+    
+    # Prepare districts dataframe for merge with prefix for clients and accounts
+    districts_client_prefixed = districts.add_prefix('client_')
+    districts_account_prefixed = districts.add_prefix('account_')
+    
+    # Merge district information for clients and accounts with prefixed columns
+    clients_with_districts = pd.merge(clients, districts_client_prefixed, left_on='client_district_id', right_on='client_district_id', how='left')
+    accounts_with_districts = pd.merge(accounts, districts_account_prefixed, left_on='account_district_id', right_on='account_district_id', how='left')
+
+    # Merge cards with dispositions and prefix card-related columns to avoid confusion
+    cards_prefixed = cards.add_prefix('card_')
+    dispositions_with_cards = pd.merge(dispositions, cards_prefixed, left_on='disp_id', right_on='card_disp_id', how='left')
+    
+    # Merge clients (with district info) with dispositions and cards
+    # Assuming dispositions might have columns that overlap with clients, prefix those if necessary
+    clients_dispositions_cards = pd.merge(dispositions_with_cards, clients_with_districts, on='client_id', how='left')
+    
+    # Merge the above with accounts (with district info) on account_id
+    accounts_clients_cards = pd.merge(accounts_with_districts, clients_dispositions_cards, on='account_id', how='left')
+    
+    # Merge orders DataFrame, assuming orders might contain columns that could overlap, prefix as needed
+    orders_prefixed = orders.add_prefix('order_')
+    comprehensive_df_with_orders = pd.merge(accounts_clients_cards, orders_prefixed, left_on='account_id', right_on='order_account_id', how='left')
+    
+    # Merge loans with the comprehensive dataframe (now including orders) on account_id
+    # Prefix loan-related columns to maintain clarity
+    loans_prefixed = loans.add_prefix('loan_')
+    final_df = pd.merge(comprehensive_df_with_orders, loans_prefixed, left_on='account_id', right_on='loan_account_id', how='left')
+
+    final_df['account_created'] = pd.to_datetime(final_df['account_created'])
+    final_df['card_issued'] = pd.to_datetime(final_df['card_issued'])
+    final_df['has_card'] = final_df['card_issued'].notna()
+    return final_df
+
+non_transactional_df = merge_non_transactional_data(clients_df, districts_df, dispositions_df, accounts_df, orders_pivot_df, loans_df, cards_df)
+non_transactional_df.info()
+```
+
+```{python}
+non_transactional_df.to_csv("./data/non_transactional.csv")
+```
+
+## EDA
+
+### Card Holders
+
+```{python}
+plt.figure(figsize=(10, 6))
+plt.title('Number of Clients by Card Type')
+sns.barplot(x=['No Card', 'Classic/Gold Card Holders', 'Junior Card Holders'], y=[non_transactional_df['card_type'].isna().sum(), non_transactional_df['card_type'].isin(['gold', 'classic']).sum(), non_transactional_df['card_type'].eq('junior').sum()])
+# ensure that the number of clients is shown on the bars
+for i, v in enumerate([non_transactional_df['card_type'].isna().sum(), non_transactional_df['card_type'].isin(['gold', 'classic']).sum(), non_transactional_df['card_type'].eq('junior').sum()]):
+    plt.text(i, v + 10, str(v), ha='center', va='bottom')
+
+plt.show()
+```
+
+Looking at the distribution of card holders in general we can see that the most clients are not in a possession of a credit card.
+
+```{python}
+plt.figure(figsize=(10, 6))
+plt.title(f'Distribution of Age for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}')
+sns.histplot(non_transactional_df[non_transactional_df['card_type'] == 'junior']['age'], kde=True, bins=30)
+plt.xlabel('Age of Client (presumably in 1999)')
+plt.show()
+```
+
+Looking at the age distribution of Junior Card holders paints a picture on this group, however only looking at the current age may be misleading as we need to understand how old they were when the card was issued to determine if they could have been eligble for a Classic/Gold card (at least 18 when the card was issued).
+
+```{python}
+non_transactional_df['card_issued'] = pd.to_datetime(non_transactional_df['card_issued'])
+
+non_transactional_df['age_at_card_issuance'] = non_transactional_df['card_issued'] - non_transactional_df['birth_date']
+non_transactional_df['age_at_card_issuance'] = non_transactional_df['age_at_card_issuance'].dt.days // 365
+
+plt.figure(figsize=(10, 6))
+plt.title(f'Distribution of Age at Card Issuance for Junior Card Holders\n total count = {len(non_transactional_df[non_transactional_df["card_type"] == "junior"])}')
+sns.histplot(non_transactional_df[non_transactional_df['card_type'] == 'junior']['age_at_card_issuance'], kde=True, bins=30)
+plt.xlabel('Age at Card Issuance')
+plt.show()
+```
+
+Here we can see that roughly 1/3 of the Junior Card holders were not of legal age (assuming legal age is 18) when receiving their Junior Card.
+
+```{python}
+plt.figure(figsize=(10, 6))
+plt.title(f'Distribution of Age at Card Issuance for All Card Types\n total count = {len(non_transactional_df)}')
+sns.histplot(non_transactional_df[non_transactional_df['card_type'] == 'junior']['age_at_card_issuance'], kde=True, bins=10, color='blue', label='Junior Card Holders')
+sns.histplot(non_transactional_df[non_transactional_df['card_type'] != 'junior']['age_at_card_issuance'], kde=True, bins=30, color='red', label='Non-Junior Card Holders')
+plt.legend()
+plt.xlabel('Age at Card Issuance')
+plt.show()
+```
+
+Comparing the age at issue date between Junior and non-Junior (Classic/Gold) card holders shows that there is no overlap between the two groups, which makes intutively sense.
+
+Therefore removing the subset of Junior Cards seems as valid as there is no reason to believe that there are Junior Cards issued wrongly, the subset being relatively small compared to the remaining issued cards and the fact that our target is specifically Classic/Gold Card owners.
+
+```{python}
+before_len = len(non_transactional_df)
+non_transactional_df = non_transactional_df[non_transactional_df['card_type'] != 'junior']
+data_reduction["Junior Card Holders"] = -(before_len - len(non_transactional_df))
+del before_len
+```
+
+Looking at the age distribution of Junior card holders and their occurence in comparison it seems valid to remove them as they are not the target group and make up a small subset of the complete dataset.
+
+### Time factors on Card Status
+
+The time between creating an account and issuing a card may also be important when filtering customers based on their history. We should avoid filtering out potentially interesting periods and understand how the timespans between account creation and card issuance are distributed.
+
+```{python}
+non_transactional_w_cards_df = non_transactional_df[non_transactional_df['card_issued'].notna() & non_transactional_df['account_created'].notna()]
+non_transactional_w_cards_df['duration_days'] = (non_transactional_w_cards_df['card_issued'] - non_transactional_w_cards_df['account_created']).dt.days
+
+plt.figure(figsize=(12, 8))
+sns.histplot(non_transactional_w_cards_df['duration_days'], bins=50, edgecolor='black', kde=True)
+plt.title('Distribution of Duration Between Account Creation and Card Issuance')
+plt.xlabel('Duration in Days')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
+```
+
+The histogram displays a distribution with multiple peaks, indicating that there are several typical time frames for card issuance after account creation. The highest peak occurs within the first 250 days, suggesting that a significant number of cards are issued during this period. The frequency decreases as duration increases, with noticeable peaks that may correspond to specific processing batch cycles or policy changes over time. The distribution also has a long tail, suggesting that in some cases, card issuance can take a very long time.
+
+Analyzing the length of time a client has been with the bank in relation to their account creation date and card ownership can provide valuable insights for a bank's customer relationship management and product targeting strategies. Long-standing clients may exhibit different banking behaviors, such as product adoption and loyalty patterns, compared to newer clients.
+
+```{python}
+max_account_creation_date = non_transactional_df['card_issued'].max()
+
+non_transactional_df['client_tenure_years_relative'] = (max_account_creation_date - non_transactional_df['account_created']).dt.days / 365.25
+
+plt.figure(figsize=(10, 6))
+ax = sns.histplot(
+    data=non_transactional_df, 
+    x='client_tenure_years_relative', 
+    hue='has_card', 
+    multiple='stack', 
+    binwidth=1,
+    stat="percent"
+)
+
+# Call the function to add labels
+add_percentage_labels(ax, non_transactional_df['has_card'].unique())
+
+# Additional plot formatting
+plt.title('Client Tenure Relative to Latest Card Issued Date and Card Ownership')
+plt.xlabel('Client Tenure (Years, Relative to Latest Card Issuance)')
+plt.ylabel('Percentage of Clients')
+plt.tight_layout()
+
+# Display the plot
+plt.show()
+```
+
+The bar chart shows the tenure of clients in years, categorized by whether they own a credit card (True) or not (False). Each bar represents the percentage of clients within a specific tenure range, allowing for comparison of the distribution of card ownership among clients with different lengths of association with the bank.
+
+### Demographics
+
+Using the available demographic data, we can investigate the potential correlation between demographic data and card status. The average salary may indicate a difference between cardholders and non-cardholders, as it is reasonable to assume that cardholders have a higher average salary than non-cardholders.
+
+```{python}
+plt.figure(figsize=(10, 6))
+sns.boxplot(x='has_card', y='client_average_salary', data=non_transactional_df)
+plt.title("Average Salary in Client's Region by Card Ownership")
+plt.xlabel('Has Card')
+plt.ylabel('Average Salary')
+plt.xticks([0, 1], ['No Card Owner', 'Card Owner'])
+
+plt.tight_layout()
+plt.show()
+```
+
+The box plot compares the average salaries of clients who own a credit card with those who do not. Both groups have a substantial overlap in salary ranges, suggesting that while there might be a trend for card owners to have higher salaries, the difference is not significant. The median salary for card owners is slightly higher than that for non-card owners, as indicated by the median line within the respective boxes.
+
+Both distributions have outliers on the higher end, indicating that some individuals have salaries significantly above the average in both groups. However, these outliers do not dominate the general trend.
+
+It should also be noted that this plot assumes that the average salary of the region's clients remained constant over the years, which is unlikely to be true.
+
+The group of bar charts represents the distribution of credit card ownership across various demographics, showing the percentage of clients with and without cards within different age groups, sexes, and regions.
+
+```{python}
+non_transactional_df['age_group'] = pd.cut(non_transactional_df['age'], bins=[0, 25, 40, 55, 70, 100], labels=['<25', '25-40', '40-55', '55-70', '>70'])
+
+plt.figure(figsize=(15, 15))
+
+# Age Group
+plt.subplot(3, 1, 1)
+age_group_counts = non_transactional_df.groupby(['age_group', 'has_card']).size().unstack(fill_value=0)
+age_group_percentages = (age_group_counts.T / age_group_counts.sum(axis=1)).T * 100
+age_group_plot = age_group_percentages.plot(kind='bar', stacked=True, ax=plt.gca())
+age_group_plot.set_title('Card Ownership by Age Group')
+age_group_plot.set_ylabel('Percentage')
+add_percentage_labels(age_group_plot, non_transactional_df['has_card'].unique())
+
+# Sex
+plt.subplot(3, 1, 2)
+sex_counts = non_transactional_df.groupby(['sex', 'has_card']).size().unstack(fill_value=0)
+sex_percentages = (sex_counts.T / sex_counts.sum(axis=1)).T * 100
+sex_plot = sex_percentages.plot(kind='bar', stacked=True, ax=plt.gca())
+sex_plot.set_title('Card Ownership by Sex')
+sex_plot.set_ylabel('Percentage')
+add_percentage_labels(sex_plot, non_transactional_df['has_card'].unique())
+
+# Client Region
+plt.subplot(3, 1, 3)
+region_counts = non_transactional_df.groupby(['client_region', 'has_card']).size().unstack(fill_value=0)
+region_percentages = (region_counts.T / region_counts.sum(axis=1)).T * 100
+region_plot = region_percentages.plot(kind='bar', stacked=True, ax=plt.gca())
+region_plot.set_title('Card Ownership by Client Region')
+region_plot.set_ylabel('Percentage')
+region_plot.tick_params(axis='x', rotation=45)
+add_percentage_labels(region_plot, non_transactional_df['has_card'].unique())
+
+plt.tight_layout()
+plt.show()
+```
+
+**Card Ownership by Age Group:** The bar chart displays the proportion of cardholders in different age groups. The percentage of cardholders is lowest in the age group of over 70, followed by the age group of 55-70, indicating that card ownership is more prevalent among younger demographics.
+
+**Card Ownership by Sex:** The bar chart shows the breakdown of card ownership by sex. The data reveals that the percentage of cardholders is comparable between both sexes, and no significant difference is present.
+
+**Card Ownership by Region** The bar chart at the bottom illustrates card ownership across different regions, showing a relatively consistent pattern among most regions.
+
+### Impact of Loans / Debt
+
+```{python}
+simplified_loan_status_mapping = {
+    "Contract finished, no problems": "Finished",
+    "Contract finished, loan not paid": "Not Paid",
+    "Contract running, OK thus-far": "Running",
+    "Contract running, client in debt": "In Debt",
+    "No Loan": "No Loan"
+}
+
+non_transactional_df['loan_status_simplified'] = non_transactional_df['loan_status'].map(simplified_loan_status_mapping)
+
+## this variable wants to kill itself
+loan_status_simplified_card_ownership_counts = non_transactional_df.groupby(['loan_status_simplified', 'has_card']).size().unstack(fill_value=0)
+loan_status_simplified_card_ownership_percentages = (loan_status_simplified_card_ownership_counts.T / loan_status_simplified_card_ownership_counts.sum(axis=1)).T * 100
+
+loan_status_simplified_card_ownership_percentages.plot(kind='bar', stacked=True, figsize=(10, 6))
+plt.title('Interaction Between Simplified Loan Status and Card Ownership')
+plt.xlabel('Simplified Loan Status')
+plt.ylabel('Percentage of Clients')
+plt.xticks(rotation=45)
+plt.legend(title='Has Card', labels=['No Card', 'Has Card'])
+plt.tight_layout()
+plt.show()
+```
+
+# Transactional Data
+
+## Set artificial issue date for non-card holders
+
+```{python}
+def add_months_since_account_to_card(df):
+    df['months_since_account_to_card'] = df.apply(
+        lambda row: (row['card_issued'].to_period('M') - row['account_created'].to_period('M')).n
+        if pd.notnull(row['card_issued']) and pd.notnull(row['account_created']) else np.nan, axis=1)
+    return df
+
+def filter_clients_without_sufficient_history(non_transactional_df, min_history_months=25):
+    if 'months_since_account_to_card' not in non_transactional_df.columns:
+        print("Warning: months_since_account_to_card column not found. Calculating history length.")
+        non_transactional_df = add_months_since_account_to_card(non_transactional_df)
+
+    count_before = len(non_transactional_df)
+    filtered_df = non_transactional_df[non_transactional_df['months_since_account_to_card'].isnull() | (non_transactional_df['months_since_account_to_card'] >= min_history_months)]
+    print(f"Filtered out {count_before - len(filtered_df)} records with less than {min_history_months} months of history. Percentage: {(count_before - len(filtered_df)) / count_before * 100:.2f}%.")
+    return filtered_df
+
+before_len = len(non_transactional_df)
+non_transactional_w_sufficient_history_df = filter_clients_without_sufficient_history(non_transactional_df)
+data_reduction["Clients without sufficient history"] = -(before_len - len(non_transactional_w_sufficient_history_df))
+del before_len
+```
+
+```{python}
+non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(subset=['card_issued']).copy()
+
+plt.figure(figsize=(12, 8))
+sns.histplot(non_transactional_w_card_df['months_since_account_to_card'], kde=True, bins=30)
+plt.title('Distribution of Months from Account Creation to Card Issuance')
+plt.xlabel('Months')
+plt.ylabel('Count')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+```
+
+```{python}
+
+### DEPENDENCY TODO REMOVE FOR MERGE
+import json
+# save transactions_df to temp as parquet
+
+transactions_df.to_parquet("temp/transactions.parquet")
+non_transactional_w_sufficient_history_df.to_parquet("temp/non_transactional_w_sufficient_history.parquet")
+accounts_df.to_parquet("temp/accounts.parquet")
+
+# save data reduction
+with open("temp/data_reduction.json", "w") as f:
+    json.dump(data_reduction, f)
+```
+

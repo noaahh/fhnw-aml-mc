@@ -1,0 +1,295 @@
+---
+title: Data Partitioning
+jupyter:
+  jupytext:
+    cell_metadata_filter: '-all'
+    main_language: python
+    notebook_metadata_filter: '-all'
+  kernelspec:
+    name: python3
+    language: python
+    display_name: Python 3 (ipykernel)
+---
+
+```{python}
+## DEPENDENCY #TODO REMOVE FOR MERGE
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+golden_record_df = pd.read_parquet('temp/golden_record.parquet')
+```
+
+
+The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
+
+
+```{python}
+from sklearn.model_selection import train_test_split
+
+train_df, test_df = train_test_split(golden_record_df,
+                                     test_size=0.2,
+                                     random_state=1337,
+                                     stratify=golden_record_df['has_card'],
+                                     shuffle=True)
+
+print(f"Train set size: {len(train_df)}, Test set size: {len(test_df)}")
+print(f"Train set distribution:\n{train_df['has_card'].value_counts(normalize=True)}")
+print(f"Test set distribution:\n{test_df['has_card'].value_counts(normalize=True)}")
+```
+
+As we can see the distribution of the target variable is maintained in both sets after the split.
+
+# Model Construction
+
+```{python}
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import (
+    make_scorer,
+    f1_score,
+    roc_auc_score,
+    precision_score,
+    recall_score,
+)
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+
+def train_evaluate_model(
+        train_df, test_df, feature_columns, model, target_column="has_card", cv=10
+):
+    """
+    Trains and evaluates a given model based on specified feature columns using cross-validation.
+
+    Parameters:
+    - train_df: DataFrame containing the training data.
+    - test_df: DataFrame containing the test data.
+    - feature_columns: List of column names to be used as features.
+    - model: The machine learning model to be trained and evaluated.
+    - target_column: Name of the target column.
+
+    Returns:
+    - metrics_report: Summary of evaluation metrics including mean and standard deviation for accuracy, F1, AUC-ROC, precision, recall.
+    - y_test: True labels for the test set.
+    - y_pred_proba: Predicted probabilities for the test set.
+    """
+    numerical_features = [
+        col
+        for col in feature_columns
+        if train_df[col].dtype in ["int64", "float64"]
+    ]
+    categorical_features = [
+        col for col in feature_columns if train_df[col].dtype == "object"
+    ]
+
+    numerical_pipeline = Pipeline(
+        [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
+    )
+
+    categorical_pipeline = Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("onehot", OneHotEncoder(handle_unknown="ignore")),
+        ]
+    )
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", numerical_pipeline, numerical_features),
+            ("cat", categorical_pipeline, categorical_features),
+        ]
+    )
+
+    pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
+
+    scoring = {
+        "accuracy": "accuracy",
+        "f1": make_scorer(f1_score),
+        "roc_auc": "roc_auc",
+        "precision": make_scorer(precision_score),
+        "recall": make_scorer(recall_score),
+    }
+
+    X_train, y_train = train_df[feature_columns], train_df[target_column]
+    X_test, y_test = test_df[feature_columns], test_df[target_column]
+
+    train_metrics_summary = cross_validate(
+        pipeline, X_train, y_train, scoring=scoring, cv=cv, return_train_score=False
+    )
+
+    pipeline.fit(X_train, y_train)
+
+    y_pred_proba = pipeline.predict_proba(X_test) if hasattr(pipeline, "predict_proba") else np.nan
+
+    test_metrics = {
+        "accuracy": pipeline.score(X_test, y_test),
+        "f1": f1_score(y_test, pipeline.predict(X_test)),
+        "roc_auc": roc_auc_score(y_test, y_pred_proba[:, 1]) if hasattr(pipeline, "predict_proba") else np.nan,
+        "precision": precision_score(y_test, pipeline.predict(X_test)),
+        "recall": recall_score(y_test, pipeline.predict(X_test))
+    }
+
+    return {
+        "train": {metric: {"folds": train_metrics_summary[f"test_{metric}"].tolist(), "mean": train_metrics_summary[f"test_{metric}"].mean(), "std": train_metrics_summary[f"test_{metric}"].std()} for metric in scoring},
+        "test": {metric: test_metrics[metric] for metric in scoring}
+    }, y_test, y_pred_proba
+
+```
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+
+model = LogisticRegression(random_state=42, max_iter=1000)
+feature_columns = [
+                      'age',
+                      'client_region'
+                  ] + [col for col in golden_record_df.columns if 'M_' in col and ('_balance' in col or '_volume' in col)]
+
+train_evaluate_model(train_df, test_df, feature_columns, model)
+```
+
+```{python}
+#| lines_to_next_cell: 2
+import scikitplot as skplt
+
+def visualize_results(metrics_report, model_name, y_true, y_pred_proba, cv=10):
+    """
+    Visualizes the results from the given metrics report dictionary.
+
+    Parameters:
+    - metrics_report: Dictionary containing training and test metrics.
+    - model_name: Name of the model.
+    - y_true: True labels.
+    - y_pred_proba: Predicted probabilities.
+    - cv: Number of cross-validation folds.
+
+    Returns:
+    - None: Displays the plots.
+    """
+    train_metrics = metrics_report['train']
+    test_metrics = metrics_report['test']
+
+    metrics = train_metrics.keys()
+
+    # Plot validation metrics with error bars
+    val_means = [train_metrics[metric]['mean'] for metric in metrics]
+    val_stds = [train_metrics[metric]['std'] for metric in metrics]
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(metrics, val_means, yerr=val_stds, capsize=5, color='c', alpha=0.7)
+    plt.title(f'{model_name}: Validation Metrics with Error Bars (CV={cv})')
+    plt.xlabel('Metrics')
+    plt.ylabel('Score')
+    for i, (mean, std) in enumerate(zip(val_means, val_stds)):
+        plt.text(i, mean + std + 0.01, f"{mean:.2f} ± {std:.2f}", ha='center', va='bottom')
+    plt.ylim(0, 1)
+    plt.grid(True)
+    plt.show()
+
+    # Plot test metrics
+    test_values = list(test_metrics.values())
+    test_names = list(test_metrics.keys())
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x=test_names, y=test_values)
+    plt.title(f'{model_name}: Test Metrics')
+    plt.xlabel('Metrics')
+    plt.ylabel('Score')
+    for i, v in enumerate(test_values):
+        if np.isnan(v):
+            plt.text(i, 0.5, "N/A", ha='center', va='bottom')
+        else:
+            plt.text(i, v + 0.01, f"{v:.2f}", ha='center', va='bottom')
+    plt.ylim(0, 1)
+    plt.grid(True)
+    plt.show()
+
+    # Check if the model has predicted probabilities
+    if not np.isnan(y_pred_proba).all():
+        # Plot AUROC curve
+        skplt.metrics.plot_roc(y_true, y_pred_proba, figsize=(10, 6))
+        plt.title(f'{model_name}: ROC Curve')
+        plt.show()
+
+        # Plot precision-recall curve
+        skplt.metrics.plot_precision_recall(y_true, y_pred_proba, figsize=(10, 6))
+        plt.title(f'{model_name}: Precision-Recall Curve')
+        plt.show()
+
+# Assuming train_evaluate_model and other necessary variables are defined
+metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, model)
+visualize_results(metrics_report, "Logistic Regression", y_test, y_pred_proba)
+```
+
+## BAV
+
+# Model Engineering
+
+# Model Comparison & Selection
+
+```{python}
+#| lines_to_next_cell: 2
+from sklearn.ensemble import RandomForestClassifier
+
+model = RandomForestClassifier(random_state=42)
+metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, model)
+visualize_results(metrics_report, "Random Forest", y_test, y_pred_proba)
+```
+
+```{python}
+from sklearn.tree import DecisionTreeClassifier
+
+
+decision_tree_model = DecisionTreeClassifier(random_state=42, max_depth=5)  # Limited depth for better interpretability
+metrics_report, y_test, y_pred_proba = train_evaluate_model(train_df, test_df, feature_columns, decision_tree_model)
+visualize_results(metrics_report, "Decision Tree", y_test, y_pred_proba)
+```
+
+------------------------------------------------------------------------
+
+# WORKBENCH - remove later
+
+### Some older input
+
+We need some categorical indicator wheter a transactions is a transactions incoming or outgoing from the perspective of the account holder. This will be important for the feature engineering later on. We will create a column called `transaction_direction` using the amount to engineer this feature.
+
+Balance is the wealth on the account after the transaction.
+
+k_symbol is the purpose of the transaction. This is often use in the context of budgeting in E-Banking applications or just personal finance management. A lot of NA values are present in this column. We will have to deal with this later on and weigh the importance of this column.
+
+Track the time series of a given account to get a better understanding of the datasets nature.
+
+It seems that there can be multiple transactions on the same day. We will have to aggregate the transactions on the same day to get a better understanding of the transactions as the timestamp resolution is not high enough to track the transactions on a daily basis.
+
+We need some handling for this as the ID is not informative as well (Dani).
+
+For the feature enginnering a per month evaluation of the transactions is sufficient (Dani).
+
+We need to make sure across the board that for the prediction we only use the data that is available at the time of the prediction. This means that we can only use the data from the past to predict the future. This is important to keep in mind when we engineer the features as some entities do not have any information about the date and therefore we cannot use them for the prediction as we cannot rule out that they are not from the future.
+
+Frequency analysis of the transactions could be interesting as the hypothesis might be that the more frequent the transactions the more likely the account holder is to be interested in a credit card. Fourier transformation could be used to get a better understanding of the frequency of the transactions.
+
+### JITT 05.03.24
+
+-   New customers are handled differently
+-   Customer without the required history should be ignored otherwise they are treated as irrelevant
+-   Lag is ignored like (12 + 1) months
+-   Age should be in relation to the time of the event (card issued / reference date for refrence clients)
+-   How old are customers with a Junior Card? This should be evaluated based on the data
+    -   Example with Junior Card model with Age as most important feature as a negative example
+-   Reference clients
+    -   They should not be as similar as possible (Twin brother problem)
+    -   Same external market conditions
+    -   Same environment
+    -   See slide 6
+-   Owner and disponents cannot be distinguished directly and assumptions are required
+    -   MasterCards vs Visa war: as much cards as possible for both client of an account
+    -   AGain the Twin brother problem as features are too similar possibly
+
+#### General notes to self
+
+-   Visualise monthly product puchases
+-   Viz environment of selected client and reference clients and answer the questions are they from a comparable environment
+
