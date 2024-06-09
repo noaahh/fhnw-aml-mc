@@ -154,11 +154,12 @@ def prepare_activity_matrix(transactions):
 
 def plot_activity_matrix(activity_matrix):
     sparse_matrix = activity_matrix.astype(bool)
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(8, 8))
     sns.heatmap(sparse_matrix, cmap="viridis", cbar=True, yticklabels=False)
     plt.title(f"Activity Matrix across all clients sorted by account creation date")
     plt.xlabel("Period")
     plt.ylabel("Accounts")
+    plt.tight_layout()
     plt.show()
 
 
