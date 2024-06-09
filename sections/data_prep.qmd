@@ -71,7 +71,7 @@ non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(
     subset=["card_issued"]
 ).copy()
 
-plt.figure()
+plt.figure(figsize=(8, 6))
 sns.histplot(
     non_transactional_w_card_df["months_since_account_to_card"], kde=True, bins=30
 )
@@ -154,7 +154,7 @@ def prepare_activity_matrix(transactions):
 
 def plot_activity_matrix(activity_matrix):
     sparse_matrix = activity_matrix.astype(bool)
-    plt.figure()
+    plt.figure(figsize=(10, 8))
     sns.heatmap(sparse_matrix, cmap="viridis", cbar=True, yticklabels=False)
     plt.title(f"Activity Matrix across all clients sorted by account creation date")
     plt.xlabel("Period")
@@ -599,7 +599,8 @@ def plot_monthly_balance_diff_and_volume(
     plt.title(f"Monthly Balance Difference and Volume for Account {account_id}")
     plt.xlabel("Month")
     plt.ylabel("Value")
-    plt.xticks(rotation=90)
+    plt.xticks(rotation=90, fontsize=7)
+    plt.yticks(fontsize=8)
     plt.legend()
     plt.grid(True)
     plt.show()
@@ -642,7 +643,8 @@ def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, accou
     plt.title(f"Monthly Transactions and Balance for Account {account_id}")
     plt.xlabel("Month")
     plt.ylabel("Value")
-    plt.xticks(rotation=90)
+    plt.xticks(rotation=90, fontsize=7)
+    plt.yticks(fontsize=8)
     plt.legend()
     plt.grid(True)
     plt.show()

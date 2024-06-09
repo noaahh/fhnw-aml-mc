@@ -1019,6 +1019,7 @@ Looking at the age distribution of Junior card holders and their occurence in co
 The time between creating an account and issuing a card may also be important when filtering customers based on their history. We should avoid filtering out potentially interesting periods and understand how the timespans between account creation and card issuance are distributed.
 
 ```{python}
+plt.figure(figsize=(8, 6))
 non_transactional_w_cards_df = non_transactional_df[
     non_transactional_df["card_issued"].notna()
     & non_transactional_df["account_created"].notna()
@@ -1067,7 +1068,6 @@ add_percentage_labels(ax, non_transactional_df["has_card"].unique())
 plt.title("Client Tenure Relative to Latest Card Issued Date and Card Ownership")
 plt.xlabel("Client Tenure (Years, Relative to Latest Card Issuance)")
 plt.ylabel("Percentage of Clients")
-plt.tight_layout()
 
 # Display the plot
 plt.show()
@@ -1087,7 +1087,6 @@ plt.xlabel("Has Card")
 plt.ylabel("Average Salary")
 plt.xticks([0, 1], ["No Card Owner", "Card Owner"])
 
-plt.tight_layout()
 plt.show()
 ```
 
@@ -1157,6 +1156,7 @@ plt.show()
 ### Impact of Loans / Debt
 
 ```{python}
+plt.figure(figsize=(8,6))
 simplified_loan_status_mapping = {
     "Contract finished, no problems": "Finished",
     "Contract finished, loan not paid": "Not Paid",
