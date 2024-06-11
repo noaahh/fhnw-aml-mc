@@ -76,6 +76,7 @@ The pipeline is flexible and can accommodate various models and feature sets, ma
 from sklearn.feature_selection import RFECV
 import numpy as np
 from sklearn.compose import ColumnTransformer
+# FIXME validate if it would make more sense to use KNNImputer or iterative imputer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -332,7 +333,9 @@ The following class handles the visualization of the model evaluation results. I
 
 ```{python}
 from sklearn.metrics import roc_curve, classification_report, precision_recall_curve
+from plotly.subplots import make_subplots
 
+import plotly.express as px
 
 class Visualizer:
     def __init__(self, trainer, model_name):
@@ -602,6 +605,58 @@ class Visualizer:
         model_profile = self.explainer.model_profile(type="partial")
         model_profile.plot()
 
+    def plot_grid_search(self, log_scale_params=None):
+        if not hasattr(self.trainer.pipeline, "named_steps") or "model_pipeline" not in self.trainer.pipeline.named_steps:
+            raise ValueError("Grid search has not been performed.")
+
+        grid_search = self.trainer.pipeline.named_steps["model_pipeline"]
+        if not hasattr(grid_search, "cv_results_"):
+            raise ValueError("Grid search results are not available.")
+
+        cv_results = pd.DataFrame(grid_search.cv_results_)
+
+        # Shorten parameter names
+        def shorten_param(param_name):
+            if "__" in param_name:
+                return param_name.rsplit("__", 1)[1]
+            return param_name
+
+        param_columns = [col for col in cv_results.columns if col.startswith("param_")]
+        shortened_params = [shorten_param(param) for param in param_columns]
+
+        cv_results_renamed = cv_results.rename(columns=dict(zip(param_columns, shortened_params)))
+
+        # Create a dictionary to store the log transformations
+        log_transformations = {}
+        for param in shortened_params:
+            if log_scale_params and param in log_scale_params:
+                log_transformations[param] = np.log10
+            else:
+                log_transformations[param] = lambda x: x
+        log_transformations["mean_test_score"] = lambda x: x
+
+        # Apply log transformations to the DataFrame
+        cv_results_transformed = cv_results_renamed.copy()
+
+
+        for param, transform in log_transformations.items():
+            if param in cv_results_transformed.columns:
+                cv_results_transformed[param] = transform(cv_results_transformed[param])
+
+        # ensure that only the subset exists 
+        cv_results_transformed = cv_results_transformed[
+            [col for col in cv_results_transformed.columns if col in log_transformations.keys()]
+        ]        
+        # Generate parallel coordinates plot
+
+        fig = px.parallel_coordinates(
+            cv_results_transformed,
+            color="mean_test_score",
+            color_continuous_scale=px.colors.sequential.Viridis,
+            title=f"{self.model_name}: Grid Search Results",
+        )
+
+        fig.show()
     def visualize_explanations_test(self, feature_columns=[]):
         self.plot_model_explanations()
 
@@ -615,6 +670,7 @@ class Visualizer:
         self.plot_breakdown(observation)
 
         plt.show()
+
 ```
 
 ## Baseline Model: Logistic Regression
@@ -644,8 +700,18 @@ baseline_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
+baseline_visualizer.plot_confusion_matrix_test()
+```
+
+```{python}
 baseline_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
+
+```{python}
+baseline_visualizer.plot_lift_curve_test()
+```
+
+
 
 ## Adding more features
 
@@ -720,7 +786,15 @@ log_reg_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
+log_reg_visualizer.plot_confusion_matrix_test()
+```
+
+```{python}
 log_reg_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
+```{python}
+log_reg_visualizer.plot_lift_curve_test()
 ```
 
 ### Random Forest
@@ -745,7 +819,14 @@ rf_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
+rf_visualizer.plot_confusion_matrix_test()
+```
+```{python}
 rf_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
+```{python}
+rf_visualizer.plot_lift_curve_test()
 ```
 
 ### Decision Tree
@@ -770,8 +851,17 @@ decision_tree_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
+decision_tree_visualizer.plot_confusion_matrix_test()
+```
+
+```{python}
 decision_tree_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
+
+```{python}
+decision_tree_visualizer.plot_lift_curve_test()
+```
+
 
 ### Gradient Boosting
 
@@ -795,7 +885,14 @@ gradient_boost_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
+gradient_boost_visualizer.plot_confusion_matrix_test()
+```
+```{python}
 gradient_boost_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
+```{python}
+gradient_boost_visualizer.plot_lift_curve_test()
 ```
 
 # Model Comparison & Selection
@@ -994,13 +1091,29 @@ gs_trainer = (
 )
 
 gs_trainer.get_best_params()
+gs_visualizer = Visualizer(gs_trainer, "Logistic Regression (Grid Search)")
 ```
 
 ```{python}
-gs_visualizer = Visualizer(gs_trainer, "Logistic Regression (Grid Search)")
+gs_visualizer.plot_validation_metrics()
+```
+
+```{python}
+gs_visualizer.plot_confusion_matrix_test()
+```
+
+```{python}
 gs_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
 
+```{python}
+gs_visualizer.plot_lift_curve_test()
+```
+
+```{python}
+gs_visualizer.plot_grid_search( log_scale_params=["C"  "penalty"  ] )
+
+```
 ```{python}
 gs_trainer.eval_test()
 gs_visualizer.plot_test_metrics()
@@ -1030,6 +1143,10 @@ reduced_best_model_visualizer = Visualizer(
 Visualizer.compare_evaluation_metrics(
     [best_model_visualizer, reduced_best_model_visualizer, gs_visualizer]
 )
+```
+
+```{python}
+reduced_best_model_visualizer.plot_validation_metrics()
 ```
 
 ## Lift Curve
