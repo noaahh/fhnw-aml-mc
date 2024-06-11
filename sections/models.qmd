@@ -2,10 +2,11 @@
 ## DEPENDENCY #TODO REMOVE FOR MERGE
 
 import random
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
-import numpy as np
 
 golden_record_df = pd.read_parquet('temp/golden_record.parquet')
 
@@ -24,7 +25,9 @@ from sklearn.model_selection import train_test_split
 
 class DataModule:
     def __init__(self, X_train, X_test, y_train, y_test, feature_columns=None):
-        self.feature_columns = feature_columns if feature_columns is not None else X_train.columns
+        self.feature_columns = (
+            feature_columns if feature_columns is not None else X_train.columns
+        )
 
         self.X_train = X_train
         self.X_test = X_test
@@ -43,7 +46,9 @@ def create_data_module(df, feature_cols, target_col="has_card", test_size=0.2):
     return DataModule(X_train, X_test, y_train, y_test)
 
 
-data_module = create_data_module(golden_record_df, golden_record_df.drop(columns=["has_card"]).columns)
+data_module = create_data_module(
+    golden_record_df, golden_record_df.drop(columns=["has_card"]).columns
+)
 
 print(f"Train set size: {len(data_module.X_train)}")
 print(f"Test set size: {len(data_module.X_test)}")
@@ -68,38 +73,68 @@ The `train_evaluate_model` function is designed to streamline the process of tra
 The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
 
 ```{python}
-from sklearn.feature_selection import RFE
+from sklearn.feature_selection import RFECV
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.model_selection import cross_validate
-from sklearn.metrics import make_scorer, f1_score, roc_auc_score, precision_score, recall_score
+from sklearn.model_selection import cross_validate, GridSearchCV
+from sklearn.metrics import (
+    make_scorer,
+    f1_score,
+    roc_auc_score,
+    precision_score,
+    recall_score,
+)
 import scikitplot as skplt
 import dalex as dx
 
 
 class Trainer:
-    def __init__(self, data_module, model, cv=10, verbose=False):
+    def __init__(
+        self,
+        data_module,
+        model,
+        cv=10,
+        select_features=False,
+        param_grid=None,
+        verbose=False,
+        n_jobs=-1,
+    ):
         self.data_module = data_module
         self.model = model
         self.cv = cv
         self.verbose = verbose
         self.preprocessor = self._create_preprocessor()
-        self.model_pipeline = None
+        self.select_features = select_features
+        self.param_grid = param_grid
+        self.n_jobs = n_jobs
+        self.pipeline = None
         self.train_metrics_report = None
         self.test_metrics_report = None
 
     def _create_preprocessor(self):
-        numerical_features = [col for col in self.data_module.X_train.columns if
-                              self.data_module.X_train[col].dtype in ["int64", "float64"]]
-        categorical_features = [col for col in self.data_module.X_train.columns if col not in numerical_features]
+        numerical_features = [
+            col
+            for col in self.data_module.X_train.columns
+            if self.data_module.X_train[col].dtype in ["int64", "float64"]
+        ]
+        categorical_features = [
+            col
+            for col in self.data_module.X_train.columns
+            if col not in numerical_features
+        ]
 
-        other_features = [col for col in self.data_module.X_train.columns if
-                          col not in numerical_features + categorical_features]
+        other_features = [
+            col
+            for col in self.data_module.X_train.columns
+            if col not in numerical_features + categorical_features
+        ]
         if len(other_features) > 0:
-            raise ValueError(f"Columns with unsupported data types found: {other_features}")
+            raise ValueError(
+                f"Columns with unsupported data types found: {other_features}"
+            )
 
         numerical_pipeline = Pipeline(
             [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
@@ -121,13 +156,30 @@ class Trainer:
 
     def fit(self):
         model_pipeline = Pipeline([("model", self.model)])
-        self.model_pipeline = Pipeline([
-            ("preprocessor", self.preprocessor),
-            ("model_pipeline", model_pipeline)
-        ])
-        self.model_pipeline.fit(self.data_module.X_train, self.data_module.y_train)
+        if self.select_features:
+            model_pipeline.insert(
+                0,
+                (
+                    "feature_selection",
+                    RFECV(self.model, verbose=3 if self.verbose else 0, cv=self.cv),
+                ),
+            )
+        if self.param_grid is not None:
+            model_pipeline = GridSearchCV(
+                model_pipeline,
+                self.param_grid,
+                cv=self.cv,
+                verbose=3 if self.verbose else 0,
+                n_jobs=self.n_jobs,
+            )
+
+        self.pipeline = Pipeline(
+            [("preprocessor", self.preprocessor), ("model_pipeline", model_pipeline)]
+        )
+
+        self.pipeline.fit(self.data_module.X_train, self.data_module.y_train)
         return self
-    
+
     @staticmethod
     def get_scoring_metrics():
         return ["accuracy", "f1_macro", "roc_auc", "precision", "recall"]
@@ -140,55 +192,78 @@ class Trainer:
             "precision": make_scorer(precision_score),
             "recall": make_scorer(recall_score),
         }
-        
+
         cv_results = cross_validate(
-            self.model_pipeline, self.data_module.X_train, self.data_module.y_train, scoring=scoring, cv=self.cv,
-            return_train_score=False, n_jobs=-1, verbose=3 if self.verbose else 0,
-            return_estimator=True, return_indices=True,
-            error_score="raise"
+            self.pipeline,
+            self.data_module.X_train,
+            self.data_module.y_train,
+            scoring=scoring,
+            cv=self.cv,
+            return_train_score=False,
+            n_jobs=self.n_jobs,
+            verbose=3 if self.verbose else 0,
+            return_estimator=True,
+            return_indices=True,
+            error_score="raise",
         )
-        
+
         self.train_metrics_report = {
             metric: {
                 "folds": cv_results[f"test_{metric}"].tolist(),
                 "mean": cv_results[f"test_{metric}"].mean(),
-                "std": cv_results[f"test_{metric}"].std()
-            } for metric in scoring
+                "std": cv_results[f"test_{metric}"].std(),
+            }
+            for metric in scoring
         }
-        
-        print(cv_results['indices'].keys())
-        
+
+        print(cv_results["indices"].keys())
+
         roc_data = []
         for i in range(self.cv):
-            estimator = cv_results['estimator'][i]
-            train_indices, test_indices = (cv_results['indices']["train"][i], 
-                                           cv_results['indices']["test"][i])
-            
+            estimator = cv_results["estimator"][i]
+            train_indices, test_indices = (
+                cv_results["indices"]["train"][i],
+                cv_results["indices"]["test"][i],
+            )
+
             true_labels = self.data_module.y_train.iloc[test_indices]
-            
-            y_pred_proba = estimator.predict_proba(self.data_module.X_train.iloc[test_indices])[:, 1]
+            y_pred_proba = estimator.predict_proba(
+                self.data_module.X_train.iloc[test_indices]
+            )
             roc_data.append((true_labels, y_pred_proba))
-            
+
         self.train_metrics_report["roc_data"] = roc_data
-            
+
         return self
 
     def eval_test(self):
         X_test, y_test = self.data_module.X_test, self.data_module.y_test
-        y_pred_proba = self.model_pipeline.predict_proba(X_test)[:, 1] if hasattr(self.model_pipeline, "predict_proba") else np.nan
+        y_pred_proba = (
+            self.pipeline.predict_proba(X_test)[:, 1]
+            if hasattr(self.pipeline, "predict_proba")
+            else np.nan
+        )
         test_metrics = {
-            "accuracy": self.model_pipeline.score(X_test, y_test),
-            "f1_macro": f1_score(y_test, self.model_pipeline.predict(X_test), average="macro"),
-            "roc_auc": roc_auc_score(y_test, y_pred_proba) if hasattr(self.model_pipeline, "predict_proba") else np.nan,
-            "precision": precision_score(y_test, self.model_pipeline.predict(X_test)),
-            "recall": recall_score(y_test, self.model_pipeline.predict(X_test))
+            "accuracy": self.pipeline.score(X_test, y_test),
+            "f1_macro": f1_score(
+                y_test, self.pipeline.predict(X_test), average="macro"
+            ),
+            "roc_auc": (
+                roc_auc_score(y_test, y_pred_proba)
+                if hasattr(self.pipeline, "predict_proba")
+                else np.nan
+            ),
+            "precision": precision_score(y_test, self.pipeline.predict(X_test)),
+            "recall": recall_score(y_test, self.pipeline.predict(X_test)),
         }
-        self.test_metrics_report = {metric: test_metrics[metric] for metric in test_metrics}
+        self.test_metrics_report = {
+            metric: test_metrics[metric] for metric in test_metrics
+        }
 
         return self
 
-    def get_trained_model(self):
-        return self.model_pipeline
+    def get_pipeline(self):
+        return self.pipeline
 
     def get_preprocessor(self):
         return self.preprocessor
@@ -198,30 +273,57 @@ class Trainer:
 
     def get_test_metrics_report(self):
         return self.test_metrics_report
-    
-    def perform_feature_selection(self, n_features_to_select=None, step=1, verbose=0):
-        if self.model_pipeline is None:
-            raise ValueError("The trainer model is not fitted. Call the 'fit' method before performing feature selection.")
 
-        rfe_pipeline = Pipeline([
-            ("preprocessor", self.preprocessor),
-            ("rfe", RFE(estimator=self.model, n_features_to_select=n_features_to_select, step=step, verbose=verbose))
-        ])
-        
-        rfe_pipeline.fit(self.data_module.X_train, self.data_module.y_train)
-        rfe = rfe_pipeline.named_steps["rfe"]
-        
-        selected_feature_indices = rfe.get_support(indices=True)
-        
-        numerical_features = self.preprocessor.transformers_[0][2]
-        categorical_features = self.preprocessor.transformers_[1][2]
-        
-        onehot_encoder = self.preprocessor.transformers_[1][1].named_steps["onehot"]
-        onehot_feature_names = onehot_encoder.get_feature_names_out(categorical_features)
-        
-        all_features = numerical_features + list(onehot_feature_names)
-        selected_features = [all_features[i] for i in selected_feature_indices]
-        return selected_features, rfe
+    def get_best_params(self):
+        if self.param_grid is None:
+            raise ValueError(
+                "No hyperparameter grid was provided during model training."
+            )
+
+        return self.pipeline["model_pipeline"].best_params_
+
+    def get_selected_features(self):
+        if not self.select_features:
+            raise ValueError("Feature selection was not enabled during model training.")
+
+        if (
+            self.pipeline is None
+            or "feature_selection"
+            not in self.pipeline.named_steps["model_pipeline"].named_steps
+        ):
+            raise ValueError(
+                "Feature selection has not been performed or the model is not fitted."
+            )
+
+        rfe = self.pipeline.named_steps["model_pipeline"].named_steps[
+            "feature_selection"
+        ]
+        feature_mask = rfe.support_
+
+        feature_names = self._get_feature_names_from_preprocessor()
+
+        selected_features = [
+            feature
+            for feature, is_selected in zip(feature_names, feature_mask)
+            if is_selected
+        ]
+        return [
+            feature
+            for feature in self.data_module.feature_columns
+            if any([feature in col for col in selected_features])
+        ]
+
+    def _get_feature_names_from_preprocessor(self):
+        transformers = self.preprocessor.transformers_
+        feature_names = []
+
+        for name, transformer, column in transformers:
+            if hasattr(transformer, "get_feature_names_out"):
+                feature_names.extend(transformer.get_feature_names_out(column))
+            else:
+                feature_names.extend(column)
+
+        return feature_names
 ```
 
 The following class handles the visualization of the model evaluation results. It provides various plots and metrics to assess the model's performance and interpretability. The class can be used to compare multiple models and visualize their evaluation metrics side by side or individually. There is a distinction made between training and test metrics to ensure a comprehensive evaluation of the model's performance.
@@ -239,33 +341,33 @@ class Visualizer:
             self.trainer.data_module.X_train,
             self.trainer.data_module.X_test,
             self.trainer.data_module.y_train,
-            self.trainer.data_module.y_test)
+            self.trainer.data_module.y_test,
+        )
 
-        self.explainer = dx.Explainer(trainer.get_trained_model(), X_test, y_test)
+        self.explainer = dx.Explainer(trainer.get_pipeline(), X_test, y_test)
 
         self.X_test = X_test
         self.y_true = y_test
-        self.y_test_pred_proba = (trainer.get_trained_model()
-                                  .predict_proba(X_test))
+        self.y_test_pred_proba = trainer.get_pipeline().predict_proba(X_test)
 
     @staticmethod
     def compare_evaluation_metrics(visualizers):
-        metrics = ['accuracy', 'f1_macro', 'roc_auc', 'precision', 'recall']
         model_names = [viz.model_name for viz in visualizers]
 
+        metrics = Trainer.get_scoring_metrics()
         means = {metric: [] for metric in metrics}
         stds = {metric: [] for metric in metrics}
         for viz in visualizers:
             train_metrics = viz.trainer.get_train_metrics_report()
             for metric in metrics:
-                means[metric].append(np.mean(train_metrics[metric]['folds']))
-                stds[metric].append(np.std(train_metrics[metric]['folds']))
+                means[metric].append(np.mean(train_metrics[metric]["folds"]))
+                stds[metric].append(np.std(train_metrics[metric]["folds"]))
 
         n_groups = len(metrics)
         bar_width = 0.15
         index = np.arange(n_groups)
         opacity = 0.8
-        
+
         plt.figure(figsize=(15, 8))
         colors = plt.cm.viridis(np.linspace(0, 1, len(model_names)))
 
@@ -274,67 +376,91 @@ class Visualizer:
             bar_values = [means[metric][i] for metric in metrics]
             error_values = [stds[metric][i] for metric in metrics]
 
-            bars = plt.bar(bar_positions, bar_values, bar_width, alpha=opacity, color=colors[i],
-                           yerr=error_values, capsize=5, label=model_name)
+            bars = plt.bar(
+                bar_positions,
+                bar_values,
+                bar_width,
+                alpha=opacity,
+                color=colors[i],
+                yerr=error_values,
+                capsize=5,
+                label=model_name,
+            )
 
             for bar, error in zip(bars, error_values):
                 yval = bar.get_height()
                 text_position = yval + error + 0.02
-                plt.text(bar.get_x() + bar.get_width() / 2, text_position, f'{yval:.2f}',
-                         ha='center', va='bottom', fontsize=10)
+                plt.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    text_position,
+                    f"{yval:.2f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=10,
+                )
 
-        plt.xlabel('Metrics', fontsize=14)
-        plt.ylabel('Scores', fontsize=14)
-        plt.title(f'Cross-Validation (k={visualizers[0].trainer.cv}) Evaluation Metrics Comparison', fontsize=16)
+        plt.xlabel("Metrics", fontsize=14)
+        plt.ylabel("Scores", fontsize=14)
+        plt.title(
+            f"Cross-Validation (k={visualizers[0].trainer.cv}) Evaluation Metrics Comparison",
+            fontsize=16,
+        )
         plt.xticks(index + bar_width * (len(model_names) - 1) / 2, metrics, fontsize=12)
         plt.ylim(0, 1.1)
-        plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+        plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
 
-        plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey')
+        plt.grid(True, which="major", linestyle="--", linewidth="0.5", color="grey")
         plt.tight_layout()
         plt.show()
 
     @staticmethod
-    def compare_roc_curves(visualizers, dataset='test'):
-        if dataset not in ['test', 'train']:
-            raise ValueError("Invalid dataset option. Choose 'test' or 'train'.")
-        
+    def compare_roc_curves(visualizers, dataset):
+        if dataset not in ["test", "eval"]:
+            raise ValueError("Invalid dataset option. Choose 'test' or 'eval'.")
+
         plt.figure(figsize=(8, 8))
         colors = plt.cm.viridis(np.linspace(0, 1, len(visualizers)))
 
         for i, viz in enumerate(visualizers):
-            if dataset == 'test':
+            if dataset == "test":
                 y_true = viz.trainer.data_module.y_test
-                y_scores = viz.trainer.get_trained_model().predict_proba(viz.trainer.data_module.X_test)[:, 1]
-            elif dataset == 'train':
+                y_scores = viz.trainer.get_trained_model().predict_proba(
+                    viz.trainer.data_module.X_test
+                )[:, 1]
+            elif dataset == "eval":
                 y_true = []
                 y_scores = []
-                for fold in viz.trainer.get_train_metrics_report()['roc_data']:
+                for fold in viz.trainer.get_train_metrics_report()["roc_data"]:
                     y_true.extend(fold[0])
-                    y_scores.extend(fold[1])
+                    y_scores.extend(fold[1][:, 1])
 
             fpr, tpr, _ = roc_curve(y_true, y_scores)
             auc_score = roc_auc_score(y_true, y_scores)
-            plt.plot(fpr, tpr, label=f"{viz.model_name} (AUC = {auc_score:.2f})", color=colors[i])
+            plt.plot(
+                fpr,
+                tpr,
+                label=f"{viz.model_name} (AUC = {auc_score:.2f})",
+                color=colors[i],
+            )
 
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'ROC Curve Comparison on {dataset.capitalize()} Set')
-        plt.legend(loc='lower right')
+        plt.plot([0, 1], [0, 1], "k--")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title(f"ROC Curve Comparison on {dataset.capitalize()} Set")
+        plt.legend(loc="lower right")
         plt.show()
 
     def plot_validation_metrics(self):
         train_metrics = self.trainer.get_train_metrics_report()
-        cv = len(train_metrics['accuracy']['folds'])
+        cv = len(train_metrics["accuracy"]["folds"])
 
         metrics = self.trainer.get_scoring_metrics()
-        fold_scores = {metric: train_metrics[metric]['folds'] for metric in metrics}
+        fold_scores = {metric: train_metrics[metric]["folds"] for metric in metrics}
 
-        plt.boxplot(fold_scores.values(), labels=metrics, notch=True, patch_artist=True)
-        plt.title(f'{self.model_name}: Validation Metrics Box Plot (CV={cv})')
-        plt.xlabel('Metrics')
-        plt.ylabel('Score')
+        plt.boxplot(fold_scores.values(), labels=metrics, notch=True)
+        plt.title(f"{self.model_name}: Validation Metrics Box Plot (CV={cv})")
+        plt.xlabel("Metrics")
+        plt.ylabel("Score")
         plt.ylim(0, 1)
         plt.grid(True)
         plt.show()
@@ -345,14 +471,14 @@ class Visualizer:
         test_names = list(test_metrics.keys())
 
         sns.barplot(x=test_names, y=test_values)
-        plt.title(f'{self.model_name}: Test Metrics')
-        plt.xlabel('Metrics')
-        plt.ylabel('Score')
+        plt.title(f"{self.model_name}: Test Metrics")
+        plt.xlabel("Metrics")
+        plt.ylabel("Score")
         for i, v in enumerate(test_values):
             if np.isnan(v):
-                plt.text(i, 0.5, "N/A", ha='center', va='bottom')
+                plt.text(i, 0.5, "N/A", ha="center", va="bottom")
             else:
-                plt.text(i, v + 0.01, f"{v:.2f}", ha='center', va='bottom')
+                plt.text(i, v + 0.01, f"{v:.2f}", ha="center", va="bottom")
         plt.ylim(0, 1)
         plt.grid(True)
         plt.show()
@@ -360,7 +486,7 @@ class Visualizer:
     def plot_confusion_matrix_test(self):
         preds = self.y_test_pred_proba.argmax(axis=1)
         skplt.metrics.plot_confusion_matrix(self.y_true, preds)
-        plt.title(f'{self.model_name}: Confusion Matrix')
+        plt.title(f"{self.model_name}: Confusion Matrix")
         plt.show()
 
     def plot_classification_report_test(self):
@@ -370,68 +496,108 @@ class Visualizer:
         report_df = pd.DataFrame(report).transpose()
         report_df = report_df.round(2)
 
-        table = plt.table(cellText=report_df.values, colLabels=report_df.columns, rowLabels=report_df.index,
-                          cellLoc='center', rowLoc='center', loc='center', fontsize=12)
+        table = plt.table(
+            cellText=report_df.values,
+            colLabels=report_df.columns,
+            rowLabels=report_df.index,
+            cellLoc="center",
+            rowLoc="center",
+            loc="center",
+            fontsize=12,
+        )
         table.auto_set_font_size(False)
         table.set_fontsize(12)
         table.scale(1.2, 1.2)
 
-        plt.axis('off')
-        plt.title(f'{self.model_name}: Classification Report')
+        plt.axis("off")
+        plt.title(f"{self.model_name}: Classification Report")
         plt.show()
 
     def plot_threshold_optimization_test(self):
-        precision, recall, thresholds = precision_recall_curve(self.y_true, self.y_test_pred_proba[:, 1])
+        precision, recall, thresholds = precision_recall_curve(
+            self.y_true, self.y_test_pred_proba[:, 1]
+        )
         f1_scores = 2 * (precision * recall) / (precision + recall)
         optimal_idx = np.argmax(f1_scores)
         optimal_threshold = thresholds[optimal_idx]
 
-        plt.plot(thresholds, f1_scores[:-1], label='F1-score')
-        plt.axvline(x=optimal_threshold, color='red', linestyle='--',
-                    label=f'Optimal Threshold: {optimal_threshold:.2f}')
-        plt.title(f'{self.model_name}: Threshold Optimization')
-        plt.xlabel('Threshold')
-        plt.ylabel('F1-score')
+        plt.plot(thresholds, f1_scores[:-1], label="F1-score")
+        plt.axvline(
+            x=optimal_threshold,
+            color="red",
+            linestyle="--",
+            label=f"Optimal Threshold: {optimal_threshold:.2f}",
+        )
+        plt.title(f"{self.model_name}: Threshold Optimization")
+        plt.xlabel("Threshold")
+        plt.ylabel("F1-score")
         plt.legend()
         plt.show()
 
     def plot_roc_curve_test(self):
-        skplt.metrics.plot_roc(self.y_true, self.y_test_pred_proba)
-        plt.title(f'{self.model_name}: ROC Curve on Test Set')
+        skplt.metrics.plot_roc(
+            self.y_true, self.y_test_pred_proba, plot_micro=False, plot_macro=False
+        )
+        plt.title(f"{self.model_name}: ROC Curve on Test Set")
+        plt.show()
+
+    def plot_roc_curve_eval(self, show_folds=False):
+        fig, ax = plt.subplots(figsize=(8, 8))
+        colors = plt.cm.viridis(np.linspace(0, 1, self.trainer.cv))
+
+        roc_data = self.trainer.get_train_metrics_report()["roc_data"]
+        for k in range(self.trainer.cv):
+            true_labels, y_pred_proba = roc_data[k]
+            fpr, tpr, _ = roc_curve(true_labels, y_pred_proba[:, 1])
+            auc_score = roc_auc_score(true_labels, y_pred_proba[:, 1])
+            ax.plot(
+                fpr, tpr, color=colors[k], label=f"Fold {k + 1} (AUC = {auc_score:.2f})"
+            )
+
+        plt.title(
+            f"{self.model_name}: ROC Curves for each fold (CV={self.trainer.cv}, "
+            f'Mean AUROC={self.trainer.train_metrics_report["roc_auc"]["mean"]:.2f})'
+        )
+        if show_folds:
+            plt.legend(loc="lower right")
+
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.grid(True)
         plt.show()
 
     def plot_precision_recall_curve_test(self):
         skplt.metrics.plot_precision_recall(self.y_true, self.y_test_pred_proba)
-        plt.title(f'{self.model_name}: Precision-Recall Curve on Test Set')
+        plt.title(f"{self.model_name}: Precision-Recall Curve on Test Set")
         plt.show()
 
     def plot_lift_curve_test(self):
         skplt.metrics.plot_lift_curve(self.y_true, self.y_test_pred_proba)
-        plt.title(f'{self.model_name}: Lift Curve on Test Set')
+        plt.title(f"{self.model_name}: Lift Curve on Test Set")
         plt.show()
 
     def plot_cumulative_gain_curve_test(self):
         skplt.metrics.plot_cumulative_gain(self.y_true, self.y_test_pred_proba)
-        plt.title(f'{self.model_name}: Cumulative Gain Curve on Test Set')
+        plt.title(f"{self.model_name}: Cumulative Gain Curve on Test Set")
         plt.show()
 
     def plot_partial_dependence_test(self, feature):
-        pdp = self.explainer.model_profile(type='partial', variables=feature)
+        pdp = self.explainer.model_profile(type="partial", variables=feature)
         pdp.plot()
 
     def plot_accumulated_local_effects_test(self, feature):
-        ale = self.explainer.model_profile(type='accumulated', variables=feature)
+        ale = self.explainer.model_profile(type="accumulated", variables=feature)
         ale.plot()
 
     def plot_breakdown_test(self, observation):
-        breakdown = self.explainer.predict_parts(observation, type='break_down')
+        breakdown = self.explainer.predict_parts(observation, type="break_down")
         breakdown.plot()
 
     def plot_model_explanations_test(self):
         feature_importance = self.explainer.model_parts()
         feature_importance.plot()
 
-        model_profile = self.explainer.model_profile(type='partial')
+        model_profile = self.explainer.model_profile(type="partial")
         model_profile.plot()
 
     def visualize_explanations_test(self, feature_columns=[]):
@@ -449,79 +615,14 @@ class Visualizer:
         plt.show()
 ```
 
-## Top-N Customer Selection
-
-As the models are trained and evaluated, we can use them to generate a list of the top N customers who are most likely to not have a card. This list can be used by the marketing team to target potential customers for card acquisition campaigns. 
-
-```{python}
-def create_top_n_customers_list(model, data, feature_columns, n):
-    mandatory_columns = ['client_id', 'has_card']
-    
-    if not hasattr(model, 'predict_proba'):
-        raise ValueError("Model does not support probability predictions")
-
-    if n > len(data):
-        raise ValueError("N cannot be greater than the number of customers")
-
-    if not all(col in data.columns for col in feature_columns):
-        raise ValueError("Feature columns not found in data")
-    
-    if not all(col in data.columns for col in mandatory_columns):
-        raise ValueError("Mandatory columns not found in data: 'client_id', 'has_card'")
-
-    data = data[data['has_card'] == 0] # Filter out customers who already have a card
-    
-    X = data[feature_columns]
-    probabilities = model.predict_proba(X)
-    probabilities = probabilities[:, 1]  # Probability of having a card (class 1). # This essentially gives the clients who should most likely have a card based on the model but don't have one.
-
-    results = pd.DataFrame({
-        'Client ID': data['client_id'],
-        'Probability': probabilities
-    })
-
-    results_sorted = results.sort_values(by='Probability', ascending=False).reset_index(drop=True)
-    top_n_results = results_sorted.head(n)
-
-    return top_n_results
-
-def compare_top_n_lists(*lists, labels):
-    if len(lists) != len(labels):
-        raise ValueError("Each list must have a corresponding label")
-    
-    if len(set([len(l) for l in lists])) != 1:
-        raise ValueError("All lists must have the same length")
-
-    overlap_matrix = pd.DataFrame(0, index=labels, columns=labels)
-
-    for i, list1 in enumerate(lists):
-        set1 = set(list1['Client ID'])
-        for j, list2 in enumerate(lists):
-            set2 = set(list2['Client ID'])
-            overlap_matrix.iloc[i, j] = len(set1.intersection(set2))
-
-    overlap_matrix = overlap_matrix / len(lists[0])  # Normalize by the list length
-    return overlap_matrix
-
-def visualize_overlap_matrix(overlap_matrix, title):
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(overlap_matrix, annot=True, cmap="Blues", cbar_kws={'label': 'Common Customers [%]'})
-    plt.title(title)
-    plt.ylabel('List from Model/Method')
-    plt.xlabel('List from Model/Method')
-    plt.xticks(ticks=np.arange(len(overlap_matrix.columns)) + 0.5, labels=overlap_matrix.columns, rotation=45, ha='right')
-    plt.yticks(ticks=np.arange(len(overlap_matrix.index)) + 0.5, labels=overlap_matrix.index, rotation=0)
-    plt.show()
-```
-
 ## Baseline Model: Logistic Regression
 
 ```{python}
-baseline_feature_columns = [
-                               'age',
-                               'client_region'
-                           ] + [col for col in golden_record_df.columns if
-                                'M_' in col and ('_balance' in col or '_volume' in col)]
+baseline_feature_columns = ["age", "client_region"] + [
+    col
+    for col in golden_record_df.columns
+    if "M_" in col and ("_balance" in col or "_volume" in col)
+]
 
 baseline_data_module = create_data_module(golden_record_df, baseline_feature_columns)
 
@@ -532,13 +633,19 @@ print(f"Baseline feature columns: {baseline_feature_columns}")
 ```{python}
 from sklearn.linear_model import LogisticRegression
 
-baseline_trainer = (Trainer(baseline_data_module,
-                            LogisticRegression(max_iter=10000))
-                    .fit().eval_train())
+baseline_trainer = (
+    Trainer(baseline_data_module, LogisticRegression(max_iter=10000)).fit().eval_train()
+)
 
 baseline_visualizer = Visualizer(baseline_trainer, "Baseline Logistic Regression")
 baseline_visualizer.plot_validation_metrics()
 ```
+
+```{python}
+baseline_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
+## Adding more features
 
 In order to possibly improve the model performance, we will include more features in the training data. We will include all features except for the ones that are not relevant for the model training.
 
@@ -548,83 +655,120 @@ Additionally we will remove all columns that contain time-dependent information,
 
 ```{python}
 num_cols_before = len(golden_record_df.columns)
-golden_record_df = golden_record_df.loc[:,
-                   ~golden_record_df.columns.str.contains("card") | golden_record_df.columns.str.contains("has_card")]
+golden_record_df = golden_record_df.loc[
+    :,
+    ~golden_record_df.columns.str.contains("card")
+    | golden_record_df.columns.str.contains("has_card"),
+]
 print(
-    f"Removed {num_cols_before - len(golden_record_df.columns)} card-related columns. Now {len(golden_record_df.columns)} columns remain.")
-
-num_cols_before = len(golden_record_df.columns)
-golden_record_df = golden_record_df.drop(columns=["loan_granted_date", "birth_date", "account_created"])
-print(
-    f"Removed {num_cols_before - len(golden_record_df.columns)} time-dependent columns. Now {len(golden_record_df.columns)} columns remain.")
+    f"Removed {num_cols_before - len(golden_record_df.columns)} card-related columns. Now {len(golden_record_df.columns)} columns remain."
+)
 
 num_cols_before = len(golden_record_df.columns)
 golden_record_df = golden_record_df.drop(
-    columns=["loan_account_id", "loan_loan_id", "order_account_id", "client_district_name", "disp_id", "account_id",
-             "account_district_name"])
+    columns=["loan_granted_date", "birth_date", "account_created"]
+)
 print(
-    f"Removed {num_cols_before - len(golden_record_df.columns)} ID columns. Now {len(golden_record_df.columns)} columns remain.")
+    f"Removed {num_cols_before - len(golden_record_df.columns)} time-dependent columns. Now {len(golden_record_df.columns)} columns remain."
+)
 
 num_cols_before = len(golden_record_df.columns)
-golden_record_df = golden_record_df.drop(columns=[col for col in golden_record_df.columns if "std" in col])
+golden_record_df = golden_record_df.drop(
+    columns=[
+        "loan_account_id",
+        "loan_loan_id",
+        "order_account_id",
+        "client_district_name",
+        "disp_id",
+        "account_id",
+        "account_district_name",
+    ]
+)
 print(
-    f"Removed {num_cols_before - len(golden_record_df.columns)} std columns. Now {len(golden_record_df.columns)} columns remain.")
+    f"Removed {num_cols_before - len(golden_record_df.columns)} ID columns. Now {len(golden_record_df.columns)} columns remain."
+)
+
+num_cols_before = len(golden_record_df.columns)
+golden_record_df = golden_record_df.drop(
+    columns=[col for col in golden_record_df.columns if "std" in col]
+)
+print(
+    f"Removed {num_cols_before - len(golden_record_df.columns)} std columns. Now {len(golden_record_df.columns)} columns remain."
+)
 
 cols_to_exclude_in_train = ["client_id", "has_card"]
-all_cols_data_module = create_data_module(golden_record_df,
-                                          golden_record_df.drop(columns=cols_to_exclude_in_train).columns)
-```
-
-```{python}
-for col in golden_record_df.columns:
-    print(col)
+all_cols_data_module = create_data_module(
+    golden_record_df, golden_record_df.drop(columns=cols_to_exclude_in_train).columns
+)
 ```
 
 ## Candidate Models
+
 ### Logistic Regression
+
 We will train a logistic regression model with the new feature set and evaluate its performance as it already showed promising results in the baseline model.
 
 ```{python}
-log_reg_trainer = (Trainer(all_cols_data_module,
-                           LogisticRegression(max_iter=10000))
-                   .fit().eval_train())
+log_reg_trainer = (
+    Trainer(all_cols_data_module, LogisticRegression(max_iter=10000)).fit().eval_train()
+)
 
 log_reg_visualizer = Visualizer(log_reg_trainer, "Logistic Regression")
 log_reg_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
-log_reg_trainer.perform_feature_selection(n_features_to_select=10)
+log_reg_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
 
 ### Random Forest
+
 We will also train a Random Forest model to see if it can outperform the logistic regression model. Random Forest models are known for their robustness and ability to capture complex relationships in the data.
 
 ```{python}
 #| lines_to_next_cell: 0
 from sklearn.ensemble import RandomForestClassifier
 
-rf_trainer = (Trainer(all_cols_data_module, RandomForestClassifier())
-              .fit()
-              .eval_train())
+rf_trainer = (
+    Trainer(
+        all_cols_data_module,
+        RandomForestClassifier(),
+    )
+    .fit()
+    .eval_train()
+)
 
 rf_visualizer = Visualizer(rf_trainer, "Random Forest")
 rf_visualizer.plot_validation_metrics()
 ```
 
+```{python}
+rf_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
 ### Decision Tree
+
 We will also train a Decision Tree model to see how it performs compared to the other models. Decision Trees are known for their interpretability and simplicity.
 
 ```{python}
 #| lines_to_next_cell: 0
 from sklearn.tree import DecisionTreeClassifier
 
-decision_tree_trainer = (Trainer(all_cols_data_module, DecisionTreeClassifier())
-                         .fit()
-                         .eval_train())
+decision_tree_trainer = (
+    Trainer(
+        all_cols_data_module,
+        DecisionTreeClassifier(),
+    )
+    .fit()
+    .eval_train()
+)
 
 decision_tree_visualizer = Visualizer(decision_tree_trainer, "Decision Tree")
 decision_tree_visualizer.plot_validation_metrics()
+```
+
+```{python}
+decision_tree_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
 
 ### Gradient Boosting
@@ -635,23 +779,170 @@ Finally, we will train a Gradient Boosting model to see if it can outperform the
 #| lines_to_next_cell: 0
 from sklearn.ensemble import GradientBoostingClassifier
 
-gradient_boost_trainer = (Trainer(all_cols_data_module, GradientBoostingClassifier())
-                          .fit()
-                          .eval_train())
+gradient_boost_trainer = (
+    Trainer(
+        all_cols_data_module,
+        GradientBoostingClassifier(),
+    )
+    .fit()
+    .eval_train()
+)
 
 gradient_boost_visualizer = Visualizer(gradient_boost_trainer, "Gradient Boosting")
 gradient_boost_visualizer.plot_validation_metrics()
 ```
 
+```{python}
+gradient_boost_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
 # Model Comparison & Selection
 
 ```{python}
-Visualizer.compare_evaluation_metrics([baseline_visualizer, log_reg_visualizer, rf_visualizer, decision_tree_visualizer, gradient_boost_visualizer])
+candidate_trainers = [
+    baseline_trainer,
+    log_reg_trainer,
+    rf_trainer,
+    decision_tree_trainer,
+    gradient_boost_trainer,
+]
+candidate_visualizers = [
+    baseline_visualizer,
+    log_reg_visualizer,
+    rf_visualizer,
+    decision_tree_visualizer,
+    gradient_boost_visualizer,
+]
 ```
 
 ```{python}
-Visualizer.compare_roc_curves([baseline_visualizer, log_reg_visualizer, rf_visualizer, decision_tree_visualizer, gradient_boost_visualizer],
-                              dataset='train')
+Visualizer.compare_evaluation_metrics(candidate_visualizers)
+```
+
+```{python}
+Visualizer.compare_roc_curves(candidate_visualizers, dataset="eval")
+```
+
+## Top-N Customer Selection
+
+We will now use the trained models to generate a list of the top N customers who are most likely to not have a card. We will compare the lists generated by each model to see if there is any overlap in the predictions.
+
+```{python}
+def create_top_n_customers_list(model, data):
+    mandatory_columns = ["client_id", "has_card"]
+
+    if not hasattr(model, "predict_proba"):
+        raise ValueError("Model does not support probability predictions")
+
+    if not all(col in data.columns for col in mandatory_columns):
+        raise ValueError("Mandatory columns not found in data: 'client_id', 'has_card'")
+
+    data = data[data["has_card"] == 0]
+
+    probabilities = model.predict_proba(data.copy())
+    # Probability of having a card (class 1). This essentially gives the clients who should most likely have a card based on the model but don't have one.
+    probabilities = probabilities[:, 1]
+
+    results = pd.DataFrame(
+        {"Client ID": data["client_id"], "Probability": probabilities}
+    )
+
+    return results.sort_values(by="Probability", ascending=False).reset_index(drop=True)
+
+
+def compare_top_n_lists(*lists, labels, top_n_percent):
+    if len(lists) != len(labels):
+        raise ValueError("Each list must have a corresponding label")
+
+    if len(set([len(l) for l in lists])) != 1:
+        raise ValueError("All lists must have the same length")
+
+    for l in lists:
+        if not l["Probability"].is_monotonic_decreasing:
+            raise ValueError("Lists must be sorted in descending order of probability")
+
+    top_n = int(len(lists[0]) * top_n_percent)
+    lists = [l.head(top_n) for l in lists]
+
+    overlap_matrix = pd.DataFrame(0, index=labels, columns=labels)
+
+    for i, list1 in enumerate(lists):
+        set1 = set(list1["Client ID"])
+        for j, list2 in enumerate(lists):
+            set2 = set(list2["Client ID"])
+            overlap_matrix.iloc[i, j] = len(set1.intersection(set2))
+
+    overlap_matrix = overlap_matrix / len(lists[0])
+    return overlap_matrix
+
+
+def visualize_overlap_matrix(overlap_matrix, title):
+    plt.figure(figsize=(10, 8))
+
+    mask = np.tril(np.ones_like(overlap_matrix, dtype=bool))
+    overlap_matrix = overlap_matrix.mask(mask)
+
+    sns.heatmap(
+        overlap_matrix,
+        annot=True,
+        cmap="Blues",
+        cbar_kws={"label": "Common Customers [%]"},
+    )
+    plt.title(title)
+    plt.ylabel("List from Model/Method")
+    plt.xlabel("List from Model/Method")
+    plt.xticks(
+        ticks=np.arange(len(overlap_matrix.columns)) + 0.5,
+        labels=overlap_matrix.columns,
+        rotation=45,
+        ha="right",
+    )
+    plt.yticks(
+        ticks=np.arange(len(overlap_matrix.index)) + 0.5,
+        labels=overlap_matrix.index,
+        rotation=0,
+    )
+    plt.show()
+```
+
+### Top-10% Customer Selection
+
+We will select the top 10% of customers who are most likely to not have a card according to each model.
+
+```{python}
+customer_lists = [
+    create_top_n_customers_list(trainer.get_pipeline(), golden_record_df)
+    for trainer in candidate_trainers
+]
+candidate_labels = [
+    "Baseline",
+    "Logistic Regression",
+    "Random Forest",
+    "Decision Tree",
+    "Gradient Boosting",
+]
+```
+
+```{python}
+top_10_overlap_matrix = compare_top_n_lists(
+    *customer_lists, labels=candidate_labels, top_n_percent=0.1
+)
+visualize_overlap_matrix(
+    top_10_overlap_matrix, "Overlap of Top-10% Customer Lists by Model"
+)
+```
+
+### Top-5% Customer Selection
+
+We will select the top 5% of customers who are most likely to not have a card according to each model.
+
+```{python}
+top_5_overlap_matrix = compare_top_n_lists(
+    *customer_lists, labels=candidate_labels, top_n_percent=0.05
+)
+visualize_overlap_matrix(
+    top_5_overlap_matrix, "Overlap of Top-5% Customer Lists by Model"
+)
 ```
 
 ## Selected Model: Logistic Regression
@@ -659,10 +950,11 @@ Visualizer.compare_roc_curves([baseline_visualizer, log_reg_visualizer, rf_visua
 ```{python}
 best_model_trainer = log_reg_trainer
 best_model_visualizer = log_reg_visualizer
+
+best_model_trainer.eval_test()
 ```
 
 ```{python}
-best_model_trainer.eval_test()
 best_model_visualizer.plot_test_metrics()
 ```
 
@@ -671,26 +963,51 @@ best_model_visualizer.plot_roc_curve_test()
 ```
 
 ```{python}
-_, _ = best_model_visualizer.plot_confusion_matrix_test(), best_model_visualizer.plot_classification_report_test()
+_, _ = (
+    best_model_visualizer.plot_confusion_matrix_test(),
+    best_model_visualizer.plot_classification_report_test(),
+)
 ```
-
-```{python}
-top_n_customers = create_top_n_customers_list(best_model_trainer.get_trained_model(), 
-                                              golden_record_df, 
-                                              all_cols_data_module.feature_columns, 10)
-top_n_customers
-```
-
-```{python}
-overlap_matrix = compare_top_n_lists(top_n_customers, top_n_customers, labels=["Model 1", "Model 2"])
-visualize_overlap_matrix(overlap_matrix, "Overlap Matrix of Top-N Customer Lists")
-```
-
-
 
 # Model Optimization
 
+After selecting the best model, we can further optimize its hyperparameters to improve its performance. We will use grid search with cross-validation to find the best hyperparameters for the logistic regression model.
+
+```{python}
+# use trainer with grid search
+
+gs_param_grid = {
+    "model__C": [0.001, 0.01, 0.1, 1, 10, 100],
+    "model__penalty": ["l1", "l2"],
+    "model__solver": ["liblinear"],
+}
+
+gs_trainer = (
+    Trainer(
+        all_cols_data_module,
+        LogisticRegression(),
+        param_grid=gs_param_grid,
+        verbose=True,
+    )
+    .fit()
+    .eval_train()
+)
+
+gs_trainer.get_best_params()
+```
+
+```{python}
+gs_visualizer = Visualizer(gs_trainer, "Logistic Regression (Grid Search)")
+gs_visualizer.plot_roc_curve_eval(show_folds=True)
+```
+
+```{python}
+gs_trainer.eval_test()
+gs_visualizer.plot_test_metrics()
+```
+
 # Model Explanation & Reduction
+
 
 # Conclusion
 
