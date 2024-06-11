@@ -155,15 +155,18 @@ class Trainer:
         )
 
     def fit(self):
-        model_pipeline = Pipeline([("model", self.model)])
+        model_pipeline_steps = [("model", self.model)]
         if self.select_features:
-            model_pipeline.insert(
+            model_pipeline_steps.insert(
                 0,
                 (
                     "feature_selection",
                     RFECV(self.model, verbose=3 if self.verbose else 0, cv=self.cv),
-                ),
+                )
             )
+            
+        model_pipeline = Pipeline(model_pipeline_steps)
+        
         if self.param_grid is not None:
             model_pipeline = GridSearchCV(
                 model_pipeline,
@@ -215,8 +218,6 @@ class Trainer:
             }
             for metric in scoring
         }
-
-        print(cv_results["indices"].keys())
 
         roc_data = []
         for i in range(self.cv):
@@ -280,7 +281,8 @@ class Trainer:
                 "No hyperparameter grid was provided during model training."
             )
 
-        return self.pipeline["model_pipeline"].best_params_
+        best_param = self.pipeline["model_pipeline"].best_params_
+        return {key.split('__')[1]: value for key, value in best_param.items()}
 
     def get_selected_features(self):
         if not self.select_features:
@@ -974,8 +976,6 @@ _, _ = (
 After selecting the best model, we can further optimize its hyperparameters to improve its performance. We will use grid search with cross-validation to find the best hyperparameters for the logistic regression model.
 
 ```{python}
-# use trainer with grid search
-
 gs_param_grid = {
     "model__C": [0.001, 0.01, 0.1, 1, 10, 100],
     "model__penalty": ["l1", "l2"],
@@ -1008,6 +1008,35 @@ gs_visualizer.plot_test_metrics()
 
 # Model Explanation & Reduction
 
+```{python}
+reduced_best_model_trainer = (
+    Trainer(
+        all_cols_data_module,
+        LogisticRegression(**gs_trainer.get_best_params()),
+        select_features=True,
+    )
+    .fit()
+    .eval_train()
+)
+
+reduced_best_model_trainer.get_selected_features()
+```
+
+```{python}
+reduced_best_model_visualizer = Visualizer(
+    reduced_best_model_trainer, "Reduced Logistic Regression"
+)
+
+Visualizer.compare_evaluation_metrics(
+    [best_model_visualizer, reduced_best_model_visualizer, gs_visualizer]
+)
+```
+
+## Lift Curve
+
+```{python}
+reduced_best_model_visualizer.plot_lift_curve_test()
+```
 
 # Conclusion
 
