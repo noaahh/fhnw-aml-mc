@@ -1022,11 +1022,11 @@ visualize_overlap_matrix(
 )
 ```
 
-## Selected Model: Logistic Regression
+## Selected Model: Random Forest
 
 ```{python}
-best_model_trainer = log_reg_trainer
-best_model_visualizer = log_reg_visualizer
+best_model_trainer = rf_trainer
+best_model_visualizer = rf_visualizer
 
 best_model_trainer.eval_test()
 ```
@@ -1052,15 +1052,16 @@ After selecting the best model, we can further optimize its hyperparameters to i
 
 ```{python}
 gs_param_grid = {
-    "model__C": [0.001, 0.01, 0.1, 1, 10, 100],
-    "model__penalty": ["l1", "l2"],
-    "model__solver": ["liblinear"],
+    "model__n_estimators": [50, 100, 200],
+    "model__max_depth": [5, 10, 20],
+    "model__min_samples_split": [2, 5, 10],
+    "model__min_samples_leaf": [1, 2, 4],
 }
 
 gs_trainer = (
     Trainer(
         all_cols_data_module,
-        LogisticRegression(),
+        RandomForestClassifier(),
         param_grid=gs_param_grid,
         verbose=True,
     )
@@ -1069,15 +1070,15 @@ gs_trainer = (
 )
 
 gs_trainer.get_best_params()
-gs_visualizer = Visualizer(gs_trainer, "Logistic Regression (Grid Search)")
+```
+
+```{python}
+gs_visualizer = Visualizer(gs_trainer, "Random Forest Grid Search")
+gs_visualizer.plot_grid_search(log_scale_params=["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"])
 ```
 
 ```{python}
 gs_visualizer.plot_validation_metrics()
-```
-
-```{python}
-gs_visualizer.plot_confusion_matrix_test()
 ```
 
 ```{python}
@@ -1089,12 +1090,19 @@ gs_visualizer.plot_lift_curve_test()
 ```
 
 ```{python}
-gs_visualizer.plot_grid_search(log_scale_params=["C", "penalty"])
+gs_trainer.eval_test()
+gs_visualizer.plot_test_metrics()
 ```
 
 ```{python}
-gs_trainer.eval_test()
-gs_visualizer.plot_test_metrics()
+_, _ = (
+    gs_visualizer.plot_confusion_matrix_test(),
+    gs_visualizer.plot_classification_report_test()
+)
+```
+
+```{python}
+Visualizer.compare_evaluation_metrics([best_model_visualizer, gs_visualizer])
 ```
 
 # Model Explanation & Reduction
@@ -1103,7 +1111,7 @@ gs_visualizer.plot_test_metrics()
 reduced_best_model_trainer = (
     Trainer(
         all_cols_data_module,
-        LogisticRegression(**gs_trainer.get_best_params()),
+        RandomForestClassifier(**gs_trainer.get_best_params()),
         select_features=True,
     )
     .fit()
@@ -1115,16 +1123,16 @@ reduced_best_model_trainer.get_selected_features()
 
 ```{python}
 reduced_best_model_visualizer = Visualizer(
-    reduced_best_model_trainer, "Reduced Logistic Regression"
+    reduced_best_model_trainer, "Reduced Random Forest"
 )
 
-Visualizer.compare_evaluation_metrics(
-    [best_model_visualizer, reduced_best_model_visualizer, gs_visualizer]
-)
+reduced_best_model_visualizer.plot_validation_metrics()
 ```
 
 ```{python}
-reduced_best_model_visualizer.plot_validation_metrics()
+Visualizer.compare_evaluation_metrics(
+    [best_model_visualizer, gs_visualizer, reduced_best_model_visualizer]
+)
 ```
 
 ## Lift Curve
