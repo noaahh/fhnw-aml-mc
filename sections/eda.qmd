@@ -281,7 +281,6 @@ clients_df.describe()
 ```
 
 ```{python}
-# todo validate bins
 plot_numerical_distributions(clients_df, ["birth_date", "age"], bins=40)
 ```
 
@@ -365,10 +364,10 @@ Taking a closer look at the distribution of type of order (k_symbol) and receivi
 We also see that the receiving bank is somewhat equally distributed, meaning that the orders are not concentrated on a single bank.
 
 ```{python}
-# todo not sure what debited_amount is
-plot_numerical_distributions(orders_df, ["debited_amount"])
+plot_numerical_distributions(orders_df, ["debited_amount"], bins=80)
 ```
 
+The plot above shows that the debited amount are primarily between 0 and 4000. From there on we can see a steady decline up to around 15000.
 
 ### Transactions
 
@@ -530,61 +529,6 @@ plt.tight_layout()
 plt.show()
 ```
 
-```{python}
-## THIS IS DEAD todo validate quickly
-fig, axs = plt.subplots(
-    2,
-    len(years),
-    figsize=(8 * len(years) / 2, 7),
-    sharey="row",
-    gridspec_kw={"height_ratios": [3, 1]},
-)
-
-for i, year in enumerate(years):
-    # Filter transactions for the current year
-    yearly_transactions = transactions_df[transactions_df["year"] == year]
-
-    # Preparing data for the box plot: a list of amounts for each month for the current year
-    amounts_per_month_yearly = [
-        yearly_transactions[yearly_transactions["month"] == month]["amount"]
-        for month in range(1, 13)
-    ]
-
-    # Preparing data for the bar chart for the current year
-    monthly_summary_yearly = (
-        yearly_transactions.groupby("month")
-        .agg(TotalAmount=("amount", "sum"), TransactionCount=("amount", "count"))
-        .reset_index()
-    )
-
-    # Selecting the appropriate axes for multiple or single year scenarios
-    ax_box = axs[0, i] if len(years) > 1 else axs[0]
-    ax_bar = axs[1, i] if len(years) > 1 else axs[1]
-
-    ax_box.boxplot(amounts_per_month_yearly, patch_artist=True)
-    ax_box.set_title(f"{year} (Box Plot)")
-    ax_box.set_yscale("symlog")
-    ax_box.set_ylabel("Transaction Amounts (log scale)")
-    ax_box.grid(True, which="both")
-
-    ax_bar.bar(
-        monthly_summary_yearly["month"],
-        monthly_summary_yearly["TransactionCount"],
-        color="tab:red",
-        alpha=0.6,
-    )
-    ax_bar.set_ylabel("Transaction Count")
-    ax_bar.grid(True, which="both")
-
-    # Setting common x-ticks and labels for all axes
-    ax_bar.set_xticks(range(1, 13))
-    ax_bar.set_xticklabels(months)
-
-fig.text(0.5, 0.04, "Month", ha="center")
-plt.tight_layout()
-# plt.show()
-```
-
 #### Negative Balances
 
 ```{python}
@@ -678,9 +622,10 @@ plot_categorical_variables(cards_df, ["type"])
 We can see that a majority of the credit cards issued are classic. A small fraction of 16.26% of the credit cards are junior cards and 9.87% are gold cards. 
 
 ```{python}
-# todo look at this.
 plot_numerical_distributions(cards_df, ["issued"])
 ```
+
+The plot above shows that over time there appear to be more credit cards issued which aligns with assumed growth of the bank (as shown in the previous plots with increasing number of transactions).
 
 ### Demographic data
 
@@ -770,7 +715,6 @@ districts_df.isnull().sum()
 Now there are no missing values in the dataset and the integrity of the data is preserved.
 
 ```{python}
-# todo add some basic eda here
 districts_df.head()
 ```
 
@@ -836,7 +780,6 @@ assert loans_df[
 assert (
     dispositions_df["account_id"].is_unique == True
 ), "An account_id should appear once in the DISPOSITION DataFrame."
-# TODO check if in accordance to decision to remove disponents from dispositions
 
 # verify each district_id in ACCOUNT and CLIENT exists in DISTRICT
 assert set(accounts_df["district_id"]).issubset(
