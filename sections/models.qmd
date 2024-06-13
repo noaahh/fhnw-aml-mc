@@ -1,7 +1,4 @@
 ```{python}
-## DEPENDENCY #TODO REMOVE FOR MERGE
-
-```{python}
 import random
 
 import matplotlib.pyplot as plt
