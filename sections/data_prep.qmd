@@ -1,30 +1,36 @@
 ```{python}
-## DEPENDENCY #TODO REMOVE FOR MERGE
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from sklearn.metrics import pairwise_distances
+from tqdm import tqdm
 import seaborn as sns
+import plotly.graph_objects as go
 import json
 
 
 transactions_df = pd.read_parquet("temp/transactions.parquet")
 accounts_df = pd.read_parquet("temp/accounts.parquet")
 non_transactional_df = pd.read_parquet("temp/non_transactional.parquet")
-# read data_reduction from temp/data_reduction.json
 with open("temp/data_reduction.json", "r") as f:
     data_reduction = json.load(f)
 ```
 
-
 # Data Preparation: Transactional Data
 
-
-#todo add description of what is happening/ overview
+As we already prepared the non-transactional data in a previous section, we now focus on the transactional data. As the end goal is to have a single record per customer, we need to aggregate the transactional data. In addition, absolute temporal data such as transaction dates needs to be transformed into relative data, such as the number of months before the event of card issuance.
 
 ## Set artificial issue date for non-card holders
 
+One crucial step in the data preparation process is to set an artificial card issue date for non-card holders. This date is necessary to align the transactional data of non-card holders with that of card holders. By setting an artificial card issue date, we can create a unified timeline for all customers, enabling a more accurate comparison of transactional behaviors across different groups. 
+
+First we will explore the distribution of the months between account creation and card issuance to understand the typical timeline for card issuance after account creation.
+
+
 ```{python}
 def add_months_since_account_to_card(df):
+    """Add a column to the DataFrame with the number of months between account creation and card issuance."""
     df["months_since_account_to_card"] = df.apply(
         lambda row: (
             (
@@ -37,15 +43,19 @@ def add_months_since_account_to_card(df):
         axis=1,
     )
     return df
+```
 
+As we need enough history to make a valid comparison between card holders and non-card holders, we filter out non-card holders with less than 25 months of history. This ensures that we have a sufficient amount of data to analyze and compare the transactional behaviors of both groups. Here is the reasoning behind this threshold:
 
+- **New Customer Period (12 months)**: We need at least one year of transactional history to capture the typical spending patterns of customers.
+- **One Year of History (12 months)**: An additional year of data provides a more comprehensive view of transactional behaviors, allowing us to identify trends and patterns more accurately across seasons and economic cycles.
+- **Lag Period (1 month)**: The month immediately preceding card issuance is excluded to avoid any potential bias caused by transactional changes due to the impending card issuance.
+
+```{python}
 def filter_clients_without_sufficient_history(
     non_transactional_df, min_history_months=25
 ):
     if "months_since_account_to_card" not in non_transactional_df.columns:
-        print(
-            "Warning: months_since_account_to_card column not found. Calculating history length."
-        )
         non_transactional_df = add_months_since_account_to_card(non_transactional_df)
 
     count_before = len(non_transactional_df)
@@ -54,20 +64,27 @@ def filter_clients_without_sufficient_history(
         | (non_transactional_df["months_since_account_to_card"] >= min_history_months)
     ]
     print(
-        f"Filtered out {count_before - len(filtered_df)} records with less than {min_history_months} months of history. Percentage: {(count_before - len(filtered_df)) / count_before * 100:.2f}%."
+        f"Filtered out {count_before - len(filtered_df)} records with less than {min_history_months} months of history. "
+        f"Percentage: {(count_before - len(filtered_df)) / count_before * 100:.2f}%."
     )
     return filtered_df
 
 
 before_len = len(non_transactional_df)
+
 non_transactional_w_sufficient_history_df = filter_clients_without_sufficient_history(
     non_transactional_df
 )
+
 data_reduction["Clients without sufficient history"] = -(
     before_len - len(non_transactional_w_sufficient_history_df)
 )
 del before_len
 ```
+
+In this case roughly 10% of the non-card holders were filtered out due to insufficient history. This is a reasonable amount and will not impact the analysis significantly.
+
+Next, we will explore the distribution of the months between account creation and card issuance for card holders to understand the typical timeline for card issuance after account creation.
 
 ```{python}
 non_transactional_w_card_df = non_transactional_w_sufficient_history_df.dropna(
@@ -88,7 +105,9 @@ plt.tight_layout()
 plt.show()
 ```
 
-## Match by similar transaction activity
+The plot shows a right-skewed distribution, with the majority of card holders receiving their cards roughly 25 to 30 months after account creation. On the long-tail end, some clients receive their cards after 60 months or more.
+
+After briefly exploring the distribution of the months between account creation and card issuance for card holders, we will now set the artificial card issuance date for non-card holders. This date will be used to align the transactional data of non-card holders with that of card holders, enabling a more accurate comparison of transactional behaviors across different groups.
 
 The following approaches were considered to match non-card holders with card holders:
 
@@ -97,38 +116,25 @@ The following approaches were considered to match non-card holders with card hol
 
 The second approach is chosen as it is provides an intuitive way to match clients based on their activity which is not only explainable but also provides a way to match clients based on their behavior. It strikes a balance of not finding a perfect match but a good enough match to focus on the discriminative features of the data.
 
-The following image serves as an technical overview of the matching process:
-![](./docs/IMG_BBEF82A6C6B5-1.jpeg)
+Both approaches have their advantages and disadvantages. The first approach is more straightforward and less computationally intensive, but it may not capture the nuances of client behavior. The second approach is more complex and computationally intensive but offers a more nuanced view of client activity, potentially leading to better matches.
 
-The process emphasizes matching based on the timing of activity, rather than a wide array of characteristics. By identifying when both existing cardholders and non-cardholders interacted with the bank, we can infer a level of behavioral alignment that extends beyond mere transactional data. This alignment suggests a shared response to external conditions.
+## Match by similar transaction activity
 
-The resolution of the activity matrix is a binary matrix where each row represents a client and each column represents a month. A value of 1 indicates activity in a given month, while 0 indicates inactivity. Therefore we concentrate on the periods during which clients engage with the bank in the form of transactions
+The process emphasizes matching based on the timing of activity, rather than a wide array of characteristics. By identifying when both existing cardholders and non-cardholders interacted with the bank, we can infer a level of behavioral alignment that extends beyond mere transactional data. This alignment suggests a shared response to external conditions. Intuitively we are constructing tuples of non-card holders and card holders based on the similarity of their activity patterns but one of them is not a card holder yet.
 
 **Assumption**: This assumes that clients active during similar periods might be influenced by the same economic and societal conditions, providing a more nuanced foundation for establishing connections between current cardholders and potential new ones.
 
 ### Construction of the Activity Matrix
 
-The activity matrix serves as the foundation of our matching process, mapping out the engagement of clients with our services over time. It is constructed from transaction data, organizing client interactions into a structured format that highlights periods of activity.
+To hold the needed information about every customer we create a so called activity matrix. The resolution of the activity matrix is a binary matrix where each row represents a client and each column represents a month. A value of 1 indicates activity in a given month, while 0 indicates inactivity. Therefore we concentrate on the periods during which clients engage with the bank in the form of transactions rather than the specifics of those transactions. Here is a step-by-step breakdown of the construction process:
 
-1.  **Data Aggregation**: We start with transaction data, which records each client's interactions across various months. This data includes every transaction made by both current cardholders and potential non-cardholders.
+1.  **Data Aggregation**: We start with transaction data, which records each client's interactions across various months. This data includes every transaction made by both current cardholders and non-cardholders.
 
 2.  **Temporal Transformation**: Each transaction is associated with a specific date. These dates are then transformed into monthly periods, consolidating daily transactions into a monthly view of activity. This step simplifies the data, focusing on the presence of activity within each month rather than the specific dates or frequencies of transactions.
 
 3.  **Matrix Structure**: The transformed data is arranged into a matrix format. Rows represent individual clients, identified by their account IDs. Columns correspond to monthly periods, spanning the entire range of months covered by the transaction data.
 
-4.  **Activity Indication**: In the matrix, a cell value is set to indicate the presence of activity for a given client in a given month. If a client made one or more transactions in a month, the corresponding cell is marked to reflect this activity. The absence of transactions for a client in a month leaves the cell unmarked.
-
-5.  **Binary Representation**: The final step involves converting the activity indicators into a binary format. Active months are represented by a '1', indicating the presence of transactions, while inactive months are denoted by a '0', indicating no transactions.
-
-The heatmap provided offers a visual representation of the activity matrix for clients, depicting the levels of engagement over various periods.
-
-- **Diagonal Trend**: There is a distinct diagonal pattern, indicating that newer accounts (those created more recently) have fewer periods of activity. This makes sense as these accounts have not had the opportunity to transact over the earlier periods displayed on the heatmap.
-
-- **Darker Areas (Purple)**: These represent periods of inactivity where clients did not engage. The darker the shade, the less activity occurred in that particular period for the corresponding set of accounts.
-
-- **Brighter Areas (Yellow)**: In contrast, the brighter areas denote periods of activity. A brighter shade implies more clients were active during that period.
-
-- **Account Creation Date**: Clients are sorted by their account creation date. Those who joined earlier are at the top, while more recent clients appear toward the bottom of the heatmap.
+4.  **Activity Indication**: In the matrix, a cell value is set to indicate the presence of activity for a given client in a given month. If a client made one or more transactions in a month, the corresponding cell is marked to reflect this activity. The absence of transactions for a client in a month leaves the cell unmarked. Active months are represented by a '1', indicating the presence of transactions, while inactive months are denoted by a '0', indicating no transactions.
 
 ```{python}
 def prepare_activity_matrix(transactions):
@@ -156,31 +162,44 @@ def prepare_activity_matrix(transactions):
 
 
 def plot_activity_matrix(activity_matrix):
+    activity_matrix = activity_matrix.reindex(
+        activity_matrix.sum(axis=1).sort_values(ascending=False).index # sort by activity across time
+    )
+    
+    activity_matrix.columns = activity_matrix.columns.str.replace("active_", "")
     sparse_matrix = activity_matrix.astype(bool)
     plt.figure(figsize=(8, 8))
-    sns.heatmap(sparse_matrix, cmap="viridis", cbar=True, yticklabels=False)
+    sns.heatmap(sparse_matrix, cmap="binary", yticklabels=False, cbar=False)
     plt.title(f"Activity Matrix across all clients sorted by account creation date")
-    plt.xlabel("Period")
+    plt.xlabel("Month-Year")
     plt.ylabel("Accounts")
     plt.tight_layout()
+
+    active_patch = mpatches.Patch(color='black', label='Active')
+    inactive_patch = mpatches.Patch(color='white', label='Not Active')
+    plt.legend(handles=[active_patch, inactive_patch], loc='upper right')
+
     plt.show()
 
 
 activity_matrix = prepare_activity_matrix(transactions_df)
-plot_activity_matrix(activity_matrix)
+plot_activity_matrix(activity_matrix.copy())
 ```
+
+The heatmap provided offers a visual representation of the activity matrix for clients, depicting the levels of engagement over various periods. Clients are sorted by activity, with the most active clients at the top and the least active at the bottom.
+
+There is a distinct diagonal pattern, indicating that newer accounts (those created more recently) perhaps have fewer periods of activity. This makes sense as these accounts have not had the opportunity to transact over the earlier periods displayed on the heatmap.
+
+Also interesting are some gaps withing the activity of some clients. This could be due to a variety of reasons, such as seasonal spending patterns or changes in financial circumstances.
 
 ### Eligibility Criteria
 
 After constructing the activity matrix, we check for eligibility of non-cardholders to be matched with cardholders. This ensures alignment for later model construction. The eligibility criteria are as follows:
 
-1.  **Account History**: Non-cardholders must have an established history of interaction, with at least 25 months of history between account creation and card issuance (12 months (= New customer period) + 13 months (= one year of history) + 1 month (Lag period)).
-2.  **Account Creation Date**: The account creation date of a non-cardholder must precede the card issuance date of the cardholder as this is a prerequisite for the matching process to work correctly when we set the issue date for non-card holders.
+1.  **Account History**: Non-cardholders must have an established history of interaction, with at least 25 months of history between account creation and card issuance (12 months (= New customer period) + 13 months (= one year of history) + 1 month (Lag period)) as described above.
+2.  **Account Creation Date**: The account creation date of a non-cardholder must precede the card issuance date of the cardholder as this is a prerequisite for the matching process to work correctly when we set the issue date for non-card holders following the intuition that nobody can have a card before the account is created.
 
 ```{python}
-from sklearn.metrics import pairwise_distances
-from tqdm import tqdm
-
 ELIGIBILITY_THRESHOLD_HIST_MONTHS = 25
 
 
@@ -219,19 +238,14 @@ def check_eligibility_for_matching(non_cardholder, cardholder, verbose=False):
 
 Next up we will implement the matching process. Our matching utilizes the Jaccard similarity index to compare activity patterns: We compare a vector representing an existing cardholder's monthly activity against a matrix of non-cardholders' activity patterns. Here we only consider the activity from the first transaction period across all customers to the card issue date.
 
-The Jaccard similarity index is calculated as the intersection of active months divided by the union of active months between the two clients. This index ranges from 0 to 1, with higher values indicating greater similarity in activity patterns.
+The Jaccard similarity index is calculated as the intersection of active months divided by the union of active months between the two clients. This index ranges from 0 to 1, with higher values indicating greater overlap in activity patterns.
 
 $$J(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
 
-The function `match_cardholders_with_non_cardholders` will perform the following steps:
+The function `select_non_cardholders` randomly selects a non-cardholder match for a cardholder from the top N eligible candidates. The selection process is based on the Jaccard similarity scores calculated between the cardholder and non-cardholders. The function performs the following steps:
 
-1. **Data Preparation**: The function prepares the activity matrix and splits the non-cardholders into two groups: those with and without cards.
-2. **Matching Process**: For each cardholder, the function calculates the Jaccard similarity between their activity pattern and those of eligible non-cardholders. It then selects the top N similar non-cardholders and randomly assigns one match per cardholder.
-3. **Match Selection**: The function selects a non-cardholder match for each cardholder based on the Jaccard similarity scores. It ensures that each non-cardholder is matched only once and that the top N similar non-cardholders are considered for matching.
-   1. The selection among the top N similar non-cardholders is done randomly to avoid bias. This process is defined in the `select_non_cardholders` function.
-   2. The function also checks for the eligibility as defined above.
-   3. If no eligible non-cardholders are found, the function prints a warning message.
-4. **Output**: The function returns a list of tuples containing the matched cardholder and non-cardholder client IDs along with their similarity scores.
+1. **Sorting by Similarity**: The function sorts the Jaccard distances between a cardholder and non-cardholders to identify the top N similar non-cardholders.
+2. **Random Selection**: From the top N similar non-cardholders, the function randomly selects one non-cardholder match for the cardholder. This random selection helps avoid bias and ensures a fair matching process.
 
 ```{python}
 def select_non_cardholders(
@@ -256,7 +270,7 @@ def select_non_cardholders(
     - top_n (int): The number of top similar non-cardholders to consider for matching.
 
     Returns:
-    - None: The matches list is updated in place with the selected match.
+    - None: The matches list is updated in place with the selected match (Object by reference).
     """
     eligible_distances = distances[eligible_non_cardholders]
     sorted_indices = np.argsort(eligible_distances)[:top_n]
@@ -273,8 +287,19 @@ def select_non_cardholders(
             matches.append(
                 (cardholder["client_id"], applicant["client_id"], similarity)
             )
+```
 
+The function `match_cardholders_with_non_cardholders` brings together the data preparation, matching process, and match selection steps. It performs the following operations:
 
+1. **Data Preparation**: The function prepares the activity matrix and splits the non-cardholders into two groups: those with and without cards.
+2. **Matching Process**: For each cardholder, the function calculates the Jaccard similarity between their activity pattern and those of eligible non-cardholders. It then selects the top N similar non-cardholders and randomly assigns one match per cardholder.
+3. **Match Selection**: The function selects a non-cardholder match for each cardholder based on the Jaccard similarity scores. It ensures that each non-cardholder is matched only once and that the top N similar non-cardholders are considered for matching.
+   1. The selection among the top N similar non-cardholders is done randomly to avoid bias. This process is defined in the `select_non_cardholders` function.
+   2. The function also checks for the eligibility as defined above.
+   3. If no eligible non-cardholders are found, the function prints a warning message.
+4. **Output**: The function returns a list of tuples containing the matched cardholder and non-cardholder client IDs along with their similarity scores.
+
+```{python}
 def match_cardholders_with_non_cardholders(non_transactional, transactions, top_n=5):
     """
     Match cardholders with non-cardholders based on the similarity of their activity patterns.
@@ -361,9 +386,16 @@ def match_cardholders_with_non_cardholders(non_transactional, transactions, top_
     return matches
 ```
 
-TODO: Visualise the matching process
-
 The matching process is executed, and the results are stored in the `matched_non_card_holders_df` DataFrame. The percentage of clients with a card issued before and after matching is calculated to assess the impact of the matching process. We expect the percentage of clients with a card issued to increase by 100% after matching, as each non-cardholder should be matched with a cardholder.
+
+```{python}
+matched_non_card_holders_df = match_cardholders_with_non_cardholders(
+    non_transactional_w_sufficient_history_df, transactions_df
+)
+
+percentage_before_matching = non_transactional_w_sufficient_history_df["card_issued"].notna().mean() * 100
+print(f"Percentage of clients with card issued: {percentage_before_matching:.2f}%")
+```
 
 Last but not least we set the artificial card issue date for each non-cardholder based on the matching results.
 
@@ -395,58 +427,60 @@ def set_artificial_issue_dates(non_transactional_df, matches):
 
     return augmented_df
 
-
-matched_non_card_holders_df = match_cardholders_with_non_cardholders(
-    non_transactional_w_sufficient_history_df, transactions_df
-)
-
-print(
-    f"Percentage of clients with card issued: {non_transactional_w_sufficient_history_df['card_issued'].notna().mean() * 100:.2f}%"
-)
 matched_non_card_holders_w_issue_date_df = set_artificial_issue_dates(
     non_transactional_w_sufficient_history_df, matched_non_card_holders_df
 )
-print(
-    f"Percentage of clients with card issued after matching: {matched_non_card_holders_w_issue_date_df['card_issued'].notna().mean() * 100:.2f}%"
-)
+
+percentage_after_matching = matched_non_card_holders_w_issue_date_df["card_issued"].notna().mean() * 100
+assert np.isclose(percentage_after_matching, percentage_before_matching * 2), "Percentage of clients with card issued after matching should be double the initial percentage."
+print(f"Percentage of clients with card issued after matching: {percentage_after_matching:.2f}%")
+print(f"Percentage without card issued after matching: {(1 - percentage_after_matching / 100) * 100:.2f}%")
 ```
 
 After each non-cardholder got the artifical card issued date assigned we drop the remaining non-cardholders without a match.
 
 ```{python}
 before_len = len(matched_non_card_holders_w_issue_date_df)
-print(-(before_len - len(matched_non_card_holders_w_issue_date_df)))
+
 matched_non_card_holders_w_issue_date_df = (
     matched_non_card_holders_w_issue_date_df.dropna(subset=["card_issued"])
 )
+
 data_reduction["Non-cardholders without match"] = -(
     before_len - len(matched_non_card_holders_w_issue_date_df)
 )
+
+print(f"Filtered out {before_len - len(matched_non_card_holders_w_issue_date_df)} non-cardholders without a match.")
 del before_len
 ```
 
-## Aggregate on a Monthly Basis
+In total 83% of the non-card holders were filtered out due to ineligibility or not being matched with a card holder.
 
-After matching cardholders with non-cardholders and setting artificial card issue dates, we aggregate the transactional data on a monthly basis. This aggregation provides a comprehensive overview of financial activities for each account, facilitating further model development providing us with a fixed of features to work with.
+## Monthly Summary of Transactions
 
-The function `aggregate_transactions_monthly` is designed to process and summarize financial transactions on a monthly basis for each account within a dataset. The explanation of its workings, step by step, is as follows:
+After matching cardholders with non-cardholders and setting artificial card issue dates, we aggregate the transactional data on a monthly basis to remove the transactional nature of the data. The monthly aggregation makes sense for multiple reasons:
 
-1.  **Sorting Transactions**: Initially, the function sorts the transactions in the provided DataFrame `transactions_df` based on `account_id` and the transaction `date`. This ensures that all transactions for a given account are ordered chronologically, which is crucial for accurate monthly aggregation and cumulative balance calculation.
+- Monthly aggregation standardizes the time frame across which we analyze transactions, allowing us to compare transactional behaviors consistently across all accounts.
+- Aggregating data on a monthly level illuminates patterns that daily data might obscure. It enables us to discern trends over a broader time scale, capturing cyclical behaviors, seasonal effects, and response to macroeconomic events.
+- Daily transaction data can be "noisy" with random fluctuations. By considering monthly totals and averages, we reduce this noise, revealing underlying trends more clearly.
 
-2.  **Monthly Grouping**: Each transaction's date is then converted to a monthly period using `dt.to_period("M")`. This step categorizes each transaction by the month and year it occurred, facilitating the aggregation of transactions on a monthly basis.
+The function `aggregate_transactions_monthly` simplifies financial transactions by summarizing them every month for each account. Here's a simplified explanation of how it works:
 
-3.  **Aggregation of Monthly Data**: The function groups the sorted transactions by `account_id` and the newly created `month` column. For each group, it calculates several metrics:
+1. **Sorting Transactions**: First, the function arranges the transactions chronologically by `account_id` and `date` within the `transactions_df` DataFrame. This helps in organizing transactions for each account by date.
 
-    - `volume`: The sum of all transactions' amounts for the month, representing the total money flow.
-    - `total_abs_amount`: The sum of the absolute values of the transactions' amounts, indicating the total amount of money moved, disregarding the direction.
-    - `transaction_count`: The count of transactions, providing a sense of activity level.
-    - `positive_transaction_count` and `negative_transaction_count`: The counts of positive (inflows) and negative (outflows) transactions, respectively. This distinction can help identify the balance between income and expenses.
-    - Statistical measures like `average_amount`, `median_amount`, `min_amount`, `max_amount`, and `std_amount` offer insights into the distribution of transaction amounts.
-    - `type_count`, `operation_count`, and `k_symbol_count`: The counts of unique transaction types, operations, and transaction symbols (k_symbol), respectively, indicating the diversity of transaction characteristics.
+2. **Monthly Grouping**: It converts each transaction's date into a monthly period. This categorizes transactions by the month and year they occurred, making it easier to group them monthly.
 
-4.  **Cumulative Balance Calculation**: After aggregating the monthly data, the function computes a cumulative balance (`balance`) for each account by cumulatively summing the `volume` (total transaction amount) over time. This step provides insight into how the account balance evolves over the months.
+3. **Aggregation of Monthly Data**: The function groups these transactions by `account_id` and the `month` column. For each group, it calculates:
+   - `volume`: Total transaction amount for the month.
+   - `total_abs_amount`: Total of absolute values of all transactions, showing the total money movement regardless of direction.
+   - `transaction_count`: Number of transactions to show how active the account was.
+   - Counts of positive and negative transactions, indicating money coming in and going out.
+   - Other statistics like average, median, minimum, maximum, and standard deviation of transaction amounts, which provide insights into how transaction amounts vary.
+   - Counts of different transaction types, operations, and symbols, showing the variety of transactions.
 
-As we have already explored and verified in the EDA section of the transactional data, each account starts with a transaction where the amount equals the inital balance. This validation ensures the integrity of the aggregated data, as the balance should accurately reflect the total transaction volume over time.
+4. **Cumulative Balance Calculation**: Finally, the function calculates a running total of the `volume` to track how the account balance changes over time.
+
+This method is effective for understanding the financial behavior of accounts on a monthly basis, helping in further analyses and model building.
 
 ```{python}
 def aggregate_transactions_monthly(df):
@@ -461,7 +495,7 @@ def aggregate_transactions_monthly(df):
     Returns:
     - pd.DataFrame: Monthly aggregated financial transaction data per account.
     """
-    df_sorted = df.sort_values(by=["account_id", "date"])
+    df_sorted = df.sort_values(by=["account_id", "date"]) # sort by account_id and date to ensure correct running balance calculation
     df_sorted["month"] = df_sorted["date"].dt.to_period("M")
 
     monthly_aggregated_data = (
@@ -470,10 +504,7 @@ def aggregate_transactions_monthly(df):
             volume=("amount", "sum"),
             total_abs_amount=("amount", lambda x: x.abs().sum()),
             transaction_count=("amount", "count"),
-            positive_transaction_count=(
-                "amount",
-                lambda x: (x >= 0).sum(),
-            ),  # TODO: it seems that there are some transactions with 0 amount, how to handle those?
+            positive_transaction_count=("amount", lambda x: (x >= 0).sum()),
             negative_transaction_count=("amount", lambda x: (x < 0).sum()),
             average_amount=("amount", "mean"),
             median_amount=("amount", "median"),
@@ -487,25 +518,24 @@ def aggregate_transactions_monthly(df):
         .reset_index()
         .sort_values(by=["account_id", "month"])
     )
-
+    
     monthly_aggregated_data["balance"] = monthly_aggregated_data.groupby("account_id")[
         "volume"
     ].cumsum()
+    
     return monthly_aggregated_data
 
-
 agg_transactions_monthly_df = aggregate_transactions_monthly(transactions_df)
-agg_transactions_monthly_df.to_csv("./data/agg_transactions_monthly.csv", index=False)
 agg_transactions_monthly_df.describe()
 ```
 
 The `validate_monthly_aggregated_transactions` function is invoked to ensure the integrity and correctness of the aggregated data through several assertions:
 
-- The balance should consistently increase or decrease based on whether the total monthly transaction volume is positive or negative, respectively.
-- For each account, the balance in the first month should equal the total transaction volume of that month.
-- The sum of positive and negative transaction counts must equal the total transaction count for each month.
-- The number of unique accounts in the aggregated data should match that in the original dataset.
-- The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset.
+1. The balance should consistently increase or decrease based on whether the total monthly transaction volume is positive or negative, respectively.
+2. For each account, the balance in the first month should equal the total transaction volume of that month.
+3. The sum of positive and negative transaction counts must equal the total transaction count for each month.
+4. The number of unique accounts in the aggregated data should match that in the original dataset.
+5. The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset.
 
 ```{python}
 def validate_monthly_aggregated_transactions(aggregated_data, original_df):
@@ -519,30 +549,33 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
     Raises:
     - AssertionError: If validation conditions are not met.
     """
-
+    # Assertion 1: Balance should consistently increase or decrease based on total monthly transaction volume
     assert (aggregated_data["volume"] >= 0).all() == (
         aggregated_data["balance"].diff() >= 0
     ).all(), "If the total amount is positive, the balance should go up."
-
     assert (aggregated_data["volume"] < 0).all() == (
         aggregated_data["balance"].diff() < 0
     ).all(), "If the total amount is negative, the balance should go down."
 
+    # Assertion 2: Balance in the first month should equal the total transaction volume of that month
     first_month = aggregated_data.groupby("account_id").nth(0)
     assert (
         first_month["volume"] == first_month["balance"]
     ).all(), "The balance should equal the volume for the first month."
 
+    # Assertion 3: The sum of positive and negative transaction counts should equal the total transaction count
     assert (
         aggregated_data["positive_transaction_count"]
         + aggregated_data["negative_transaction_count"]
         == aggregated_data["transaction_count"]
     ).all(), "The sum of positive and negative transaction counts should equal the total transaction count."
 
+    # Assertion 4: The number of unique accounts in the aggregated data should match that in the original dataset
     assert (
         aggregated_data["account_id"].nunique() == original_df["account_id"].nunique()
     ), "The number of unique account_ids in the aggregated DataFrame should be the same as the original DataFrame."
 
+    # Assertion 5: The final balances of accounts in the aggregated data should closely match their last recorded transactions in the original dataset
     assert (
         pd.merge(
             aggregated_data.groupby("account_id")
@@ -556,7 +589,7 @@ def validate_monthly_aggregated_transactions(aggregated_data, original_df):
             suffixes=("_final", "_last"),
         )
         .apply(
-            lambda x: np.isclose(x["balance_final"], x["balance_last"], atol=5), axis=1
+            lambda x: np.isclose(x["balance_final"], x["balance_last"], atol=5), axis=1 # allow for small differences due to floating point precision
         )
         .any()
     ), "Some accounts' final balances do not match their last transactions."
@@ -566,14 +599,12 @@ validate_monthly_aggregated_transactions(agg_transactions_monthly_df, transactio
 ```
 
 # Exploratory Data Analysis: Aggregated Monthly Transactions
+
+Further we explore the aggregated monthly transactions to gain insights into the financial behavior of accounts over time. We will visualize the monthly transaction volume, balance, and number of transactions to understand how these metrics evolve over time.
+
 ## Monthly Balance Difference and Volume
 
-This plot gives a clear picture of how money moves in and out of an account each month and how these movements affect the overall balance. It does this by showing two things:
-
-- **Balance Difference**: This line shows whether the account balance went up or down each month. If the line goes up, it means the account gained money that month. If it goes down, the account lost money.
-- **Volume**: This line shows the total amount of money that moved in the account each month, regardless of whether it was coming in or going out.
-
-**What to Look For**: - A direct link between the amount of money moved (volume) and changes in the account balance. High incoming money should lead to an uptick in the balance, and lots of outgoing money should lead to a downturn. - This visual check helps to understand how active the account is and whether it’s generally getting fuller or emptier over time.
+The `plot_monthly_balance_diff_and_volume` function visualizes the monthly balance difference and volume for a specific account. The balance difference is calculated as the difference between the current month's balance and the previous month's balance. This metric helps identify the impact of monthly transactions on the account balance. The volume represents the total transaction amount for each month.
 
 ```{python}
 def plot_monthly_balance_diff_and_volume(
@@ -613,14 +644,16 @@ def plot_monthly_balance_diff_and_volume(
 plot_monthly_balance_diff_and_volume(agg_transactions_monthly_df, 2)
 ```
 
-## Monthly Transactions, Balance, and Volume Plot Explanation
+This plot gives a clear picture of how money moves in and out of an account each month and how these movements affect the overall balance. It does this by showing two things:
 
-This visualization offers a snapshot of an account’s activity over time by comparing money movement each month with the overall account balance. It helps to understand:
+- **Balance Difference**: This line shows whether the account balance went up or down each month. If the line goes up, it means the account gained money that month. If it goes down, the account lost money.
+- **Volume**: This line shows the total amount of money that moved in the account each month, regardless of whether it was coming in or going out.
 
-- **Volume**: How much money came in or went out of the account each month. Incoming money is shown as up, and outgoing money as down.
-- **Balance**: The total money in the account at the end of each month, showing how it's changed over time due to the monthly transactions.
+There is a direct link between the amount of money moved (volume) and changes in the account balance. High incoming money should lead to an uptick in the balance, and lots of outgoing money should lead to a downturn. It further confirms the aggregation made in the previous step was correct.
 
-**What to Look For**: - How the monthly money movement impacts the account's growing or shrinking balance. For example, a few months of high income should visibly increase the balance. - This simple visual guide helps spot trends, like if the account is steadily growing, holding steady, or facing issues, giving quick insights into financial well-being and further validates the aggregation made in the previous step.
+## Monthly Balance and Volume
+
+Instead of the difference in balance, we can also look at the monthly balance and volume directly. The `plot_monthly_transactions_balance_and_volume` function visualizes the monthly transactions and balance for a specific account.
 
 ```{python}
 def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, account_id):
@@ -657,7 +690,16 @@ def plot_monthly_transactions_balance_and_volume(agg_transactions_monthly, accou
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 2)
 ```
 
-## Delieverable: Closer Look at Account 14
+This visualization offers a snapshot of an account’s activity over time by comparing money movement each month with the overall account balance. Similarly to the previous plot, it shows two key metrics:
+
+- **Volume**: How much money came in or went out of the account each month. Incoming money is shown as up, and outgoing money as down.
+- **Balance**: The total money in the account at the end of each month, showing how it's changed over time due to the monthly transactions.
+
+It shows how the monthly money movement impacts the account's growing or shrinking balance. For example, a few months of high income should visibly increase the balance. It further validates the aggregation made in the previous step.
+
+## Deliverable: Closer Look at Account 14
+
+Let's take a closer look at the monthly transactions, balance, and volume for account 14 as requested by the task.
 
 ```{python}
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 14)
@@ -665,7 +707,9 @@ plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 14)
 
 Account 14 shows a rather conservative transaction history. The spending habits are all withing range of 10k to -10k per month. We can see little volatility, the account shows a slight trend of growing.
 
-## Delieverable: Closer Look at Account 18
+## Deliverable: Closer Look at Account 18
+
+Let's also examine the monthly transactions, balance, and volume for account 18.
 
 ```{python}
 plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 18)
@@ -673,20 +717,17 @@ plot_monthly_transactions_balance_and_volume(agg_transactions_monthly_df, 18)
 
 Account 18 paints a different picture in comparison to account 14.
 
-The volatility here is a lot higher, indiciating a potential for a business account or high income household. Especially March 1994 to December 1994 show some volatile transaction habits.
+The volatility here is a lot higher, indicating a potential for a business account or high income household. Especially March 1994 to December 1994 show some volatile transaction habits.
 
-Looking at the balance and volume per month for the accounts 14 and 18 we can notice some interesting patterns.
-
-TODO: Add analysis
+Looking at the balance and volume per month for the accounts 14 and 18 we can notice different patterns. Account 14 shows a rather conservative transaction history with little volatility and a slight trend of growing. Account 18, on the other hand, shows a lot more volatility, indicating a potential business account or high-income household. This highlights the importance of understanding the financial behavior of accounts to identify patterns and trends that can inform decision-making. Ultimately, this is the job of the models we will build in the next steps.
 
 # Pivot Transactions: Rolling Up to Monthly Aggregates
 
-We have condensed transaction data into a monthly aggregated format. This aggregation serves a multifaceted purpose:
+Now we pivot the aggregated transaction data to have each account as a row and the months leading up to card issuance as columns. This transformation aligns with the goal for a single record per account, summarizing transactional behavior in the months before card issuance.
 
-- Monthly aggregation standardizes the time frame across which we analyze transactions, allowing us to compare transactional behaviors consistently across all accounts.
-- Aggregating data on a monthly level illuminates patterns that daily data might obscure. It enables us to discern trends over a broader time scale, capturing cyclical behaviors, seasonal effects, and response to macroeconomic events.
-- Daily transaction data can be "noisy" with random fluctuations. By considering monthly totals and averages, we reduce this noise, revealing underlying trends more clearly.
-- Our primary objective is to understand behaviors leading up to the issuance of a card. Aggregating transactions on a monthly basis helps focus on the crucial period preceding card issuance, enabling us to correlate transactional behaviors with the propensity to become a cardholder.
+The `pivot_transactions` function aggregates monthly transaction data and merges it with non-transactional account data. It focuses on the time frame leading up to the card issuance, filtering transactions based on a specified range of months before card issuance and aggregating various transaction metrics.
+
+We are mainly interested in the time frame 2 months to 13 months before card issuance. This range allows us to capture transactional behavior in the year leading up to the card issuance, ignoring the month directly before the card issuance to avoid any potential bias from the card issuance itself.
 
 ```{python}
 def pivot_transactions(
@@ -759,13 +800,11 @@ def pivot_transactions(
     pivoted_data = aggregated_data.pivot(
         index="account_id", columns="months_before_card"
     )
+    
     pivoted_data.columns = [
         "_".join(["M", str(col[1]), col[0]]) for col in pivoted_data.columns.values
     ]
-
-    final_dataset = pivoted_data.reset_index()
-    return final_dataset
-
+    return pivoted_data.reset_index()
 
 transactions_pivoted_df = pivot_transactions(
     matched_non_card_holders_w_issue_date_df, agg_transactions_monthly_df
@@ -775,24 +814,34 @@ transactions_pivoted_df.describe()
 
 # Merge everything together
 
+Finally, we merge the non-transactional data with the pivoted transactional data to create the final golden record. This record contains all relevant information for each account, including the aggregated transactional data for each month leading up to the card issuance date.
+
+The resulting DataFrame has one row per account, with columns representing various metrics for each month before card issuance along with non-transactional data like client and account IDs, card issuance dates, and other relevant information.
+
+We can merge the non-transactional data with the pivoted transactional data using the `account_id` as the common key. As each transaction is linked to an account, this key ensures that the transactional data is correctly associated with the respective account.
+
 ```{python}
 golden_record_df = matched_non_card_holders_w_issue_date_df.merge(
-    transactions_pivoted_df, on="account_id", how="left"
+    transactions_pivoted_df, on="account_id", how="left" # left join as we 
 )
-golden_record_df.to_csv("data/golden_record.csv", index=False)
+
 data_reduction["Final Golden Record"] = len(golden_record_df)
-
-assert golden_record_df[
-    "client_id"
-].is_unique, "Each client_id should appear exactly once in the final DataFrame."
-assert golden_record_df[
-    "account_id"
-].is_unique, "Each account_id should appear exactly once in the final DataFrame."
-
 golden_record_df.head()
 ```
 
 Looking at the first few rows of the final golden record, we can see the aggregated transactional data for each account, with columns representing various metrics for each month leading up to the card issuance date.
+
+Additionally we can verify the uniqueness of `client_id` and `account_id` in the final DataFrame.
+
+```{python}
+assert golden_record_df[
+    "client_id"
+].is_unique, "Each client_id should appear exactly once in the final DataFrame."
+
+assert golden_record_df[
+    "account_id"
+].is_unique, "Each account_id should appear exactly once in the final DataFrame."
+```
 
 ```{python}
 plt.figure()
@@ -803,7 +852,7 @@ plt.ylabel("Count")
 plt.show()
 ```
 
-We can see that the number of clients with a card issued is equal to the number of clients without a card issued, indicating a successful matching process.
+Looking at the card issuance status we can see that the number of clients with a card issued is equal to the number of clients without a card issued.
 
 ```{python}
 plt.figure()
@@ -816,15 +865,13 @@ plt.ylabel("Count")
 plt.show()
 ```
 
-The distribution of card issuance dates shows that the card issuance process was spread out over time, with an expected identical distribution for clients with and without cards issued.
+The distribution of card issuance dates shows that the card issuance process was spread out over time, with an expected identical distribution for clients with and without cards issued. This makes sense as we set the artificial card issue date for each non-cardholder based on the matching results.
 
 # Data Reduction Summary
 
 The following waterfall chart visualizes the data reduction process, highlighting the number of records retained or lost at each stage.
 
 ```{python}
-import plotly.graph_objects as go
-
 data_reduction_df = pd.DataFrame(
     list(data_reduction.items()), columns=["Category", "Amount"]
 )
@@ -855,11 +902,25 @@ fig.update_layout(
 fig.show()
 ```
 
+The waterfall chart provides a visual representation of the data reduction process, illustrating the number of records retained or lost at each stage. The chart shows the reduction in the number of records from the initial dataset to the final golden record, highlighting the impact of each step in the data preparation pipeline:
+
+- **Initial Dataset**: The starting point with the full dataset of 4500 accounts/records.
+- **Junior Accounts**: The removal of junior accounts, reducing the dataset by 145 records.
+- **Clients without sufficient history**: The elimination of clients without sufficient transactional history, resulting in a reduction of 419 records.
+- **Non-cardholders without match**: The filtering out of non-cardholders without a match, leading to a decrease of 3'280 records.
+- **Final Golden Record**: The final dataset with 656 records, each representing a unique account with aggregated transactional data for each month leading up to the card issuance date.
+
 # Exploratory Data Analysis: Golden Record
+
+With the final golden record in hand, we can now perform exploratory data analysis to gain insights into the financial behavior of cardholders and non-cardholders.
 
 ## Comparing Cardholders and Non-Cardholders
 
-### Trends in Monthly Financial Metrics
+We will focus on comparing the financial behavior of cardholders and non-cardholders to identify any significant differences in their transactional patterns. This analysis can help us understand how cardholders differ from non-cardholders in terms of transaction volume, balance, and other financial metrics giving us an impression of the financial behavior of cardholders and non-cardholders.
+
+### Trends in Financial Metrics
+
+The function `plot_trends_with_medians` generates line graphs for average monthly values and annotates medians for specified ranges. This visualization helps identify trends in financial metrics over time and highlights the median values for specific periods, providing insights into the distribution of values.
 
 ```{python}
 golden_cardholders = golden_record_df[golden_record_df["has_card"]]
@@ -936,133 +997,102 @@ def plot_trends_with_medians(
 ### Monthly Balance Trends
 
 ```{python}
-median_ranges = [
-    (0, 2),
-    (9, 11),
-]  # First 3 months and last 3 months for a 12-month period
-balance_columns = [f"M_{i}_balance" for i in range(2, 14)]
 plot_trends_with_medians(
     golden_cardholders,
     golden_non_cardholders,
-    balance_columns,
+    [f"M_{i}_balance" for i in range(2, 14)],
     "Monthly Balance Trends",
-    median_ranges,
+    [(0, 2), (9, 11)]
 )
 ```
+
+Starting with the monthly balance trends, we can observe how the average balance changes over time for cardholders and non-cardholders. The line graph shows the average monthly balance for each group, with annotations indicating the median balance for specific periods.
+
+It is interesting to note that the median balance for cardholders is consistently higher than that of non-cardholders, indicating a potential difference in financial stability or spending habits between the two groups over time.
 
 ### Monthly Volume Trends
 
 ```{python}
-volume_columns = [
-    f"M_{i}_volume" for i in range(2, 14)
-]  # Simulating monthly volume columns
 plot_trends_with_medians(
     golden_cardholders,
     golden_non_cardholders,
-    volume_columns,
+    [f"M_{i}_volume" for i in range(2, 14)],
     "Monthly Volume Trends",
     median_ranges,
 )
 ```
 
+The monthly volume trends show the average monthly transaction volume for cardholders and non-cardholders over time. The line graph illustrates how the transaction volume changes each month, with annotations highlighting the median volume for specific periods.
+
+The median volume for cardholders is higher than that of non-cardholders, indicating a potential difference in transactional activity or spending patterns between the two groups. However, when sole looking at the volume, the difference is not as pronounced as with the balance and shows very volatile behavior. Generally this could come from the fact that the volume is the sum of all transactions, which can be naturally very volatile.
+
 ### Monthly Transaction Count Trends
 
 ```{python}
-transaction_count_columns = [
-    f"M_{i}_transaction_count" for i in range(2, 14)
-]  # Simulating monthly transaction count columns
 plot_trends_with_medians(
     golden_cardholders,
     golden_non_cardholders,
-    transaction_count_columns,
+    [f"M_{i}_transaction_count" for i in range(2, 14)],
     "Monthly Transaction Count Trends",
     median_ranges,
 )
 ```
 
+
+The monthly transaction count trends show the average number of transactions per month for cardholders and non-cardholders over time. The line graph displays how the transaction count changes each month, with annotations indicating the median count for specific periods.
+
+The median transaction count for cardholders is higher than that of non-cardholders, suggesting a difference in transactional activity or spending habits between the two groups. This is in line with the volume trends, indicating that cardholders tend to have more transactions on average than non-cardholders.
+
 ### Monthly Positive and Negative Transaction Count Trends
 
 ```{python}
-positive_transaction_count_columns = [
-    f"M_{i}_positive_transaction_count" for i in range(2, 14)
-]  # Simulating monthly positive transaction count columns
 plot_trends_with_medians(
     golden_cardholders,
     golden_non_cardholders,
-    positive_transaction_count_columns,
+    [f"M_{i}_positive_transaction_count" for i in range(2, 14)],
     "Monthly Positive Transaction Count Trends",
     median_ranges,
 )
 ```
 
-### Monthly Negative Transaction Count Trends
+The monthly transaction count trends show the average number of transactions per month for cardholders and non-cardholders over time. The line graph displays how the transaction count changes each month, with annotations indicating the median count for specific periods.
+
+The median transaction count for cardholders is only slightly higher than that of non-cardholders, indicating that the difference in transactional activity is not as pronounced for positive transactions. This suggests that both groups have similar patterns of money coming in each month.
 
 ```{python}
-negative_transaction_count_columns = [
-    f"M_{i}_negative_transaction_count" for i in range(2, 14)
-]  # Simulating monthly negative transaction count columns
 plot_trends_with_medians(
     golden_cardholders,
     golden_non_cardholders,
-    negative_transaction_count_columns,
+    [f"M_{i}_negative_transaction_count" for i in range(2, 14)],
     "Monthly Negative Transaction Count Trends",
     median_ranges,
 )
 ```
 
-### Comparison of Average Feature Values
-To better understand the differences between cardholders and non-cardholders, we can compare the average values of specific features. The function `plot_grouped_comparison` generates grouped bar charts for the average feature values of cardholders and non-cardholders. This visualization helps identify differences in financial behaviors between the two groups.
+The monthly negative transaction count trends show the average number of transactions per month for cardholders and non-cardholders over time. The line graph displays how the transaction count changes each month, with annotations indicating the median count for specific periods.
+
+The picture is pretty similar to the positive transaction count trends, indicating that both groups have similar patterns of money going out each month. This suggests that the difference in transactional activity between cardholders and non-cardholders is not as pronounced for negative transactions as well as for positive transactions.
+
+### Loan Amount
 
 ```{python}
-def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
-    """
-    Plots grouped bar charts for average feature values of cardholders and non-cardholders.
+avg_loan_amount_cardholders = golden_cardholders["loan_amount"].mean()
+avg_loan_amount_non_cardholders = golden_non_cardholders["loan_amount"].mean()
 
-    Parameters:
-    - cardholders (pd.DataFrame): DataFrame containing data for cardholders.
-    - non_cardholders (pd.DataFrame): DataFrame containing data for non-cardholders.
-    - feature_columns (list of str): List of column names whose averages to compare.
-    """
-    cardholder_avg = cardholders[feature_columns].mean()
-    non_cardholder_avg = non_cardholders[feature_columns].mean()
-
-    index = range(len(feature_columns))
-    bar_width = 0.35
-
-    fig, ax = plt.subplots()
-    bars1 = ax.bar(
-        index, cardholder_avg, bar_width, label="Cardholders", color="skyblue"
-    )
-    bars2 = ax.bar(
-        [p + bar_width for p in index],
-        non_cardholder_avg,
-        bar_width,
-        label="Non-Cardholders",
-        color="orange",
-    )
-
-    ax.set_xlabel("Feature")
-    ax.set_ylabel("Average Value")
-    ax.set_title("Average Feature Values by Group")
-    ax.set_xticks([p + bar_width / 2 for p in index])
-    ax.set_xticklabels(feature_columns)
-    ax.legend()
-
-    plt.xticks(rotation=45)  # Rotate feature names for better visibility
-    plt.show()
-
-
-plot_grouped_comparison(
-    golden_cardholders,
-    golden_non_cardholders,
-    [col for col in golden_record_df.columns if "balance" in col],
+plt.figure()
+plt.title("Average Loan Amount by Card Issuance Status")
+sns.barplot(
+    x=["Cardholders", "Non-Cardholders"],
+    y=[avg_loan_amount_cardholders, avg_loan_amount_non_cardholders],
 )
-plot_grouped_comparison(golden_cardholders, golden_non_cardholders, ["loan_amount"])
+
+plt.ylabel("Average Loan Amount")
+plt.show()
 ```
 
-```{python}
-## DEPENDENCIES TODO REMOVE FOR MERGE
+The average loan amount for cardholders is higher than that of non-cardholders, indicating that non-cardholders tend to have higher loan amounts. Yet, this difference is not as pronounced as with the balance, volume, and transaction count trends and not as significant.
 
-# save golden record to temp
+```{python}
 golden_record_df.to_parquet("temp/golden_record.parquet")
 ```
+
