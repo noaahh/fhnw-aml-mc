@@ -1018,7 +1018,7 @@ plot_trends_with_medians(
     golden_non_cardholders,
     [f"M_{i}_volume" for i in range(2, 14)],
     "Monthly Volume Trends",
-    median_ranges,
+    [(0, 2), (9, 11)]
 )
 ```
 
@@ -1034,7 +1034,7 @@ plot_trends_with_medians(
     golden_non_cardholders,
     [f"M_{i}_transaction_count" for i in range(2, 14)],
     "Monthly Transaction Count Trends",
-    median_ranges,
+    [(0, 2), (9, 11)]
 )
 ```
 
@@ -1051,7 +1051,7 @@ plot_trends_with_medians(
     golden_non_cardholders,
     [f"M_{i}_positive_transaction_count" for i in range(2, 14)],
     "Monthly Positive Transaction Count Trends",
-    median_ranges,
+    [(0, 2), (9, 11)]
 )
 ```
 
@@ -1065,7 +1065,7 @@ plot_trends_with_medians(
     golden_non_cardholders,
     [f"M_{i}_negative_transaction_count" for i in range(2, 14)],
     "Monthly Negative Transaction Count Trends",
-    median_ranges,
+    [(0, 2), (9, 11)]
 )
 ```
 
