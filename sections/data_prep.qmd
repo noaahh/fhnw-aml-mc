@@ -18,6 +18,9 @@ with open("temp/data_reduction.json", "r") as f:
 
 # Data Preparation: Transactional Data
 
+
+#todo add description of what is happening/ overview
+
 ## Set artificial issue date for non-card holders
 
 ```{python}
@@ -1008,6 +1011,7 @@ plot_trends_with_medians(
 ```
 
 ### Comparison of Average Feature Values
+To better understand the differences between cardholders and non-cardholders, we can compare the average values of specific features. The function `plot_grouped_comparison` generates grouped bar charts for the average feature values of cardholders and non-cardholders. This visualization helps identify differences in financial behaviors between the two groups.
 
 ```{python}
 def plot_grouped_comparison(cardholders, non_cardholders, feature_columns):
