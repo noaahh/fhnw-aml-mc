@@ -1,6 +1,7 @@
 ```{python}
 ## DEPENDENCY #TODO REMOVE FOR MERGE
 
+```{python}
 import random
 
 import matplotlib.pyplot as plt
@@ -17,6 +18,8 @@ random.seed(1337)
 # Data Partitioning
 
 The data is split in a 80/20 ratio for training and testing purposes. The stratification ensures that the distribution of the target variable is maintained in both sets. When actually training the models, we will additionally use cross-validation to ensure robust evaluation.
+
+Additionally, we will create a `DataModule` class to encapsulate the training and testing data, as well as the feature columns used in the model. This class will help us manage the data and features throughout the model training and evaluation process.
 
 
 ```{python}
@@ -57,9 +60,12 @@ print(f"Train set distribution:\n{data_module.y_train.value_counts(normalize=Tru
 print(f"Test set distribution:\n{data_module.y_test.value_counts(normalize=True)}")
 ```
 
-As we can see the distribution of the target variable is maintained in both sets after the split.
+As we can see the distribution of the target variable is maintained in both sets after the split. The ratios are as specified in the 80/20 split.
+
 
 # Model Construction
+
+We will now construct a pipeline for training and evaluating machine learning models. The pipeline will handle preprocessing, model training, cross-validation, and evaluation. We will use this pipeline to train and evaluate multiple candidate models.
 
 ## Pipeline for Training and Evaluation
 
@@ -72,11 +78,14 @@ The `train_evaluate_model` function is designed to streamline the process of tra
 
 The pipeline is flexible and can accommodate various models and feature sets, making it a versatile tool for model development and evaluation. It returns a summary of evaluation metrics for both training and test sets, as well as the true labels and predicted probabilities for the test set.
 
+Additionally, the pipeline supports feature selection using Recursive Feature Elimination with Cross-Validation (RFECV). This feature selection method automatically selects the most relevant features based on the model's performance during cross-validation. The selected features can be retrieved from the pipeline after training.
+
+Last but not least, the pipeline supports hyperparameter tuning using Grid Search with Cross-Validation. This functionality allows for optimizing the model's hyperparameters to improve performance. The best hyperparameters can be retrieved after training the model.
+
 ```{python}
 from sklearn.feature_selection import RFECV
 import numpy as np
 from sklearn.compose import ColumnTransformer
-# FIXME validate if it would make more sense to use KNNImputer or iterative imputer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -329,11 +338,10 @@ class Trainer:
         return feature_names
 ```
 
-The following class handles the visualization of the model evaluation results. It provides various plots and metrics to assess the model's performance and interpretability. The class can be used to compare multiple models and visualize their evaluation metrics side by side or individually. There is a distinction made between training and test metrics to ensure a comprehensive evaluation of the model's performance.
+Similarly to the `Trainer` class, the `Visualizer` class is designed to streamline the process of visualizing model performance and explanations. It provides a variety of visualization methods for evaluating models, including confusion matrices, classification reports, ROC curves, precision-recall curves, and feature importances.
 
 ```{python}
 from sklearn.metrics import roc_curve, classification_report, precision_recall_curve
-from plotly.subplots import make_subplots
 
 import plotly.express as px
 
@@ -458,16 +466,36 @@ class Visualizer:
     def plot_validation_metrics(self):
         train_metrics = self.trainer.get_train_metrics_report()
         cv = len(train_metrics["accuracy"]["folds"])
-
         metrics = self.trainer.get_scoring_metrics()
         fold_scores = {metric: train_metrics[metric]["folds"] for metric in metrics}
 
-        plt.boxplot(fold_scores.values(), labels=metrics, notch=True)
-        plt.title(f"{self.model_name}: Validation Metrics Box Plot (CV={cv})")
-        plt.xlabel("Metrics")
-        plt.ylabel("Score")
-        plt.ylim(0, 1)
-        plt.grid(True)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        bp = ax1.boxplot(fold_scores.values(), labels=metrics, notch=True, patch_artist=True, positions=np.arange(len(metrics))+1)
+        for box in bp['boxes']:
+            box.set(color='blue', linewidth=2)
+            box.set(facecolor='lightblue')
+        ax1.set_title('Boxplot of Metrics')
+        ax1.set_ylabel('Scores')
+        ax1.set_ylim(0, 1)
+        ax1.grid(True)
+
+        means = [np.mean(values) for values in fold_scores.values()]
+        std_devs = [np.std(values) for values in fold_scores.values()]
+        bar_positions = np.arange(1, len(metrics)+1)
+        ax2.bar(bar_positions, means, align='center', alpha=0.7, color='green', capsize=10)
+        ax2.set_xticks(bar_positions)
+        ax2.set_xticklabels(metrics)
+        ax2.set_title('Bar Chart of Average Metrics')
+        ax2.set_ylabel('Average Score')
+        ax2.set_ylim(0, 1)
+        ax2.grid(True)
+
+        for idx, (mean, std) in enumerate(zip(means, std_devs)):
+            ax2.text(idx + 1, mean, f'{mean:.2f}±{std:.2f}', ha='center', va='bottom', fontsize=9, color='darkred')
+
+        plt.tight_layout()
+        plt.suptitle(f"{self.model_name}: Validation Metrics Comparison (CV={cv})", fontsize=16)
+        plt.subplots_adjust(top=0.85)
         plt.show()
 
     def plot_test_metrics(self):
@@ -493,7 +521,14 @@ class Visualizer:
         skplt.metrics.plot_confusion_matrix(self.y_true, preds)
         plt.title(f"{self.model_name}: Confusion Matrix")
         plt.show()
-
+        
+    def plot_confusion_matrix_eval(self):
+        y_true = []
+        y_pred = []
+        for fold in self.trainer.get_train_metrics_report()["roc_data"]:
+            y_true.extend(fold[0])
+            y_pred.extend(fold[1][:, 1].argmax(axis=1))
+                
     def plot_classification_report_test(self):
         preds = self.y_test_pred_proba.argmax(axis=1)
         report = classification_report(self.y_true, preds, output_dict=True)
@@ -654,6 +689,10 @@ class Visualizer:
 
 ## Baseline Model: Logistic Regression
 
+We will start by training a baseline logistic regression model using a subset of features. The features include the client's age, region, and aggregated balance and volume information from the transactional data. The goal is to establish a baseline performance level that we can compare against more complex models.
+
+The logistic regression model is a simple yet effective model for binary classification tasks. It provides interpretable results and can serve as a good starting point for more complex models.
+
 ```{python}
 baseline_feature_columns = ["age", "client_region"] + [
     col
@@ -667,6 +706,8 @@ print(f"Number of baseline feature columns: {len(baseline_feature_columns)}")
 print(f"Baseline feature columns: {baseline_feature_columns}")
 ```
 
+Filtering the relevant columns for the baseline model, we have 26 columns.
+
 ```{python}
 from sklearn.linear_model import LogisticRegression
 
@@ -678,13 +719,15 @@ baseline_visualizer = Visualizer(baseline_trainer, "Baseline Logistic Regression
 baseline_visualizer.plot_validation_metrics()
 ```
 
-```{python}
-baseline_visualizer.plot_confusion_matrix_test()
-```
+The baseline model hits quite high scores in all metrics showing good robustness across folds. 
+
+The confusion matrix shows that the model is performing well on the test set with a high number of true positives and true negatives. There is an equal number of false positives and false negatives.
 
 ```{python}
 baseline_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
+
+The ROC curve shows that the model has a high true positive rate across different thresholds. The AUC score is also quite high, indicating good performance.
 
 ## Adding more features
 
@@ -696,6 +739,8 @@ Additionally we will remove all columns that contain time-dependent information,
 
 ```{python}
 num_cols_before = len(golden_record_df.columns)
+print(f"Number of columns before filtering: {num_cols_before}")
+
 golden_record_df = golden_record_df.loc[
     :,
     ~golden_record_df.columns.str.contains("card")
@@ -741,13 +786,27 @@ cols_to_exclude_in_train = ["client_id", "has_card"]
 all_cols_data_module = create_data_module(
     golden_record_df, golden_record_df.drop(columns=cols_to_exclude_in_train).columns
 )
+
+print(f"Number of all feature columns: {len(all_cols_data_module.feature_columns)}")
+del num_cols_before
 ```
+
+In total we remove 30 columns from the dataset. The remaining columns are used for training the models.
 
 ## Candidate Models
 
+We will now train multiple candidate models using the expanded feature set and evaluate their performance. The candidate models include:
+
+- Logistic Regression
+- Random Forest
+- Decision Tree
+- Gradient Boosting
+
+We will train each model using the same cross-validation strategy and evaluation metrics to ensure a fair comparison. After training the models, we will evaluate their performance across folds. 
+
 ### Logistic Regression
 
-We will train a logistic regression model with the new feature set and evaluate its performance as it already showed promising results in the baseline model.
+As a direct extension of the baseline model, we will train a logistic regression model using the expanded feature set. The hypothesis is that the additional features will improve the model's performance by capturing more complex relationships but also potentially introduce noise and reduce generalization.
 
 ```{python}
 log_reg_trainer = (
@@ -758,9 +817,7 @@ log_reg_visualizer = Visualizer(log_reg_trainer, "Logistic Regression")
 log_reg_visualizer.plot_validation_metrics()
 ```
 
-```{python}
-log_reg_visualizer.plot_confusion_matrix_test()
-```
+As hypothesized, the logistic regression model with the expanded feature set performs worse than the baseline model. This indicates that the additional features might have introduced noise or overfitting. The model's performance is still quite good, but it is slightly worse than the baseline model.
 
 ```{python}
 log_reg_visualizer.plot_roc_curve_eval(show_folds=True)
@@ -852,7 +909,6 @@ gradient_boost_visualizer.plot_confusion_matrix_test()
 ```{python}
 gradient_boost_visualizer.plot_roc_curve_eval(show_folds=True)
 ```
-
 
 # Model Comparison & Selection
 
@@ -962,7 +1018,6 @@ def visualize_overlap_matrix(overlap_matrix, title):
     )
     plt.show()
 ```
-
 
 ## Selected Model: Random Forest
 
@@ -1139,5 +1194,4 @@ visualize_overlap_matrix(
 ```
 
 # Conclusion
-
 
