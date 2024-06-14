@@ -383,7 +383,7 @@ class Visualizer:
         index = np.arange(n_groups)
         opacity = 0.8
         
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(9, 6))
         colors = plt.cm.viridis(np.linspace(0, 1, len(model_names)))
         
         for i, model_name in enumerate(model_names):
@@ -1157,7 +1157,7 @@ _, _ = (
 )
 ```
 
-The confusion matrix shows that the model is performing well on the test set with a high number of true positives and true negatives. However, there is an unequal number of false positives and false negatives: The false positives are higher than the false negatives. This hint that the model may be slightly biased towards predicting positive samples (clients who have a card).
+The confusion matrix shows that the model is performing well on the test set with a high number of true positives and true negatives. However, there is an unequal number of false positives and false negatives: The false positives are higher than the false negatives. This hints that the model may be slightly biased towards predicting positive samples (clients who have a card).
 
 ```{python}
 gs_visualizer.plot_lift_curve_test()
