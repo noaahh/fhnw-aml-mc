@@ -7,9 +7,6 @@ data/non_transactional.csv
 
 main_files/
 
-main.html
-
-main.ipynb
 
 data/golden_record.csv
 /temp/
@@ -17,6 +14,4 @@ data/golden_record.csv
 temp_overview_files/
 /.quarto/
 
-exports/
 
-*.ipynb
