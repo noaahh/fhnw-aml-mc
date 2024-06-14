@@ -9,8 +9,6 @@ import pandas as pd
 import seaborn as sns
 
 sns.set_theme()
-# plt.style.use('seaborn-white')
-# plt.style.use('ggplot')
 
 data_reduction = OrderedDict()
 
@@ -1298,9 +1296,7 @@ validate_first_transactions(transactions_df)
 We can confirm the truth of the assertions made. It is certain that there is a transaction with an amount equal to the balance in the transaction history of every account on the first date.
 
 ```{python}
-## DEPENDENCY 1 TODO REMOVE FOR MERGE 
 import json
-# save transactions_df to temp as parquet
 
 transactions_df.to_parquet("temp/transactions.parquet")
 accounts_df.to_parquet("temp/accounts.parquet")
