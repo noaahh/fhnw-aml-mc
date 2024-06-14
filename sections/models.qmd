@@ -383,7 +383,7 @@ class Visualizer:
         index = np.arange(n_groups)
         opacity = 0.8
         
-        plt.figure(figsize=(9, 6))
+        plt.figure(figsize=(9, 7))
         colors = plt.cm.viridis(np.linspace(0, 1, len(model_names)))
         
         for i, model_name in enumerate(model_names):
@@ -418,7 +418,7 @@ class Visualizer:
         plt.ylabel('Scores', fontsize=14)
         plt.title('Cross-Validation (k={}) Evaluation Metrics Comparison'.format(visualizers[0].trainer.cv), fontsize=16)
         plt.xticks(index + bar_width * (len(model_names) - 1) / 2, metrics, fontsize=12, rotation=90)
-        plt.ylim(0, 1.1)
+        plt.ylim(0, 1.21)
         plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
         plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey')
         plt.tight_layout()
@@ -524,7 +524,7 @@ class Visualizer:
     def plot_confusion_matrix_test(self):
         preds = self.y_test_pred_proba.argmax(axis=1)
         skplt.metrics.plot_confusion_matrix(self.y_true, preds)
-        plt.title(f"{self.model_name}: Confusion Matrix")
+        plt.title(f"{self.model_name}: Confusion Matrix on Test Set")
         plt.show()
         
     def plot_confusion_matrix_eval(self):
@@ -555,12 +555,12 @@ class Visualizer:
         table.scale(1.2, 1.2)
 
         plt.axis("off")
-        plt.title(f"{self.model_name}: Classification Report")
+        plt.title(f"{self.model_name}: Classification Report on Test Set")
         plt.show()
 
     def plot_roc_curve_test(self):
         skplt.metrics.plot_roc(
-            self.y_true, self.y_test_pred_proba, plot_micro=False, plot_macro=False
+            self.y_true, self.y_test_pred_proba, plot_micro=False, plot_macro=True
         )
         plt.title(f"{self.model_name}: ROC Curve on Test Set")
         plt.show()
@@ -600,6 +600,7 @@ class Visualizer:
     def plot_lift_curve_test(self):
         skplt.metrics.plot_lift_curve(self.y_true, self.y_test_pred_proba)
         plt.title(f"{self.model_name}: Lift Curve on Test Set")
+        plt.legend(loc="upper right")
         plt.show()
 
     def plot_cumulative_gain_curve_test(self):
@@ -1119,7 +1120,7 @@ gs_visualizer = Visualizer(gs_trainer, "Random Forest Grid Search")
 gs_visualizer.plot_grid_search(log_scale_params=["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"])
 ```
 
-Looking at the coordinate plot of the GridSearch results, we can see that the model's performance increases with the number of estimators and the maximum depth of the trees. Overall the impact of the `min_samples_split` and `min_samples_leaf` hyperparameters is less pronounced. The best model is found at the highest values of `n_estimators` and possibly mid-range values of `max_depth`.
+Looking at the coordinate plot of the GridSearch results, we can see that the model's performance increases with the number of estimators and the maximum depth of the trees. Overall the impact of the `min_samples_split` and `min_samples_leaf` hyperparameters is less pronounced. The best model is found at the highest values of `n_estimators` and possibly mid-range values of `max_depth`. In the end the optimizations are minimal though with a mean test score being between 0.81 and 0.835.
 
 ```{python}
 gs_visualizer.plot_validation_metrics()
@@ -1163,9 +1164,14 @@ The confusion matrix shows that the model is performing well on the test set wit
 gs_visualizer.plot_lift_curve_test()
 ```
 
+Looking at the lift curve we can see some interesting patterns. For true class there is a sharper drop of precision for around 0.25 percentage of samples which then recovers again, before continuing with the expected decline, this indicates that there appears to be a problem in certain classifications in the top 0.20 percentage of probabilities. Looking at the false class, everything seems fine, with a high lift in the beginning and a steady smooth decline.
+
 ```{python}
 best_model_visualizer.plot_roc_curve_test()
 ```
+
+
+
 
 ```{python}
 _, _ = (
@@ -1173,6 +1179,8 @@ _, _ = (
     best_model_visualizer.plot_classification_report_test(),
 )
 ```
+
+Looking at the confusion matrix and classification report of the Random Forest model, we can see that the model performs well on the test set. The confusion matrix shows a high number of true positives and true negatives, with a low number of false positives and false negatives. There is a slight imbalace in the false positives and false negatives, with the false positives being higher than the false negatives. This can also be seen in the recall for False class being lower at 0.79.
 
 # Model Explanation & Reduction
 
@@ -1195,15 +1203,12 @@ except FileNotFoundError:
 
 selected_features = reduced_best_model_trainer.get_selected_features()
 print("Selected Features:", selected_features)
+print("Number of selected features:", len(selected_features))
+
+reduced_best_model_visualizer = Visualizer(reduced_best_model_trainer, "Reduced Random Forest")
 ```
 
-```{python}
-reduced_best_model_visualizer = Visualizer(
-    reduced_best_model_trainer, "Reduced Random Forest"
-)
-
-reduced_best_model_visualizer.plot_validation_metrics()
-```
+Looking at the selected features we see some confirmation of our previous analysis. The selection contains a every of base balance feature (M_2 to M_12). This makes sense as our analysis showed that across the board card holders in the golden record appear to have higher balances than non-card holders.
 
 ```{python}
 Visualizer.compare_evaluation_metrics(
@@ -1211,36 +1216,50 @@ Visualizer.compare_evaluation_metrics(
 )
 ```
 
+The comparison shows that the reduced Random Forest model performs in some cases slightly worse than the original Random Forest model. Across all metrics we see a negligble decrease of about 1% in the mean scores. The variance of the scores is also slightly higher, indicating that the model may be less robust. This is a trade-off we have to make when reducing the number of features. Given the gained explainability and interpretability of the model, this trade-off is worth it.
+
 ```{python}
 reduced_best_model_visualizer.plot_confusion_matrix_test()
 ```
+
+The confusion matrix is almost identical with the exception of one fewer false positive. Therefore the reduced model performs better than the original model in this regard.
 
 ```{python}
 reduced_best_model_visualizer.plot_model_explanations_test()
 ```
 
-## Lift Curve
+Here we can see the feature important of the reduced model. The most important feature is the `M_2_balance` feature, which is the base balance of the client. This confirms our previous analysis that the base balance is a strong indicator of whether a client has a card or not. In appear all balance features as important features in the model.
+
+## Lift Curve on reduced model vs grid search model
 
 ```{python}
 reduced_best_model_visualizer.plot_lift_curve_test()
+gs_visualizer.plot_lift_curve_test()
 ```
+
+Also comparing the lift curves of the grid search model and the reduced model we can see very little difference. There appears to be a slightly earlier drop at already 0.18 percentage of samples for the reduced model, but the overall shape of the curve is very similar.
 
 ## Top-N Customer List
 
 We will generate a list of the top 10% and top 5% customers who are most likely to get a card according to the reduced Random Forest model.
 
 ```{python}
-rf_models = [rf_trainer, reduced_best_model_trainer]
+rf_models = [rf_trainer, gs_trainer, reduced_best_model_trainer]
+
 
 rf_customer_lists = [
     create_top_n_customers_list(trainer.get_pipeline(), golden_record_df)
     for trainer in rf_models
 ]
 
-rf_labels = ["Random Forest", "Reduced Random Forest"]
+rf_labels = ["Random Forest", "Grid Search Random Forest", "Reduced Random Forest"]
 
 top_10_overlap_matrix_rf = compare_top_n_lists(
     *rf_customer_lists, labels=rf_labels, top_n_percent=0.1
+)
+
+visualize_overlap_matrix(
+    top_10_overlap_matrix_rf, "Overlap of Top-10% Customer Lists by Model"
 )
 ```
 
@@ -1248,9 +1267,13 @@ top_10_overlap_matrix_rf = compare_top_n_lists(
 top_5_overlap_matrix_rf = compare_top_n_lists(
     *rf_customer_lists, labels=rf_labels, top_n_percent=0.05
 )
+
+visualize_overlap_matrix(
+    top_5_overlap_matrix_rf, "Overlap of Top-5% Customer Lists by Model"
+)
 ```
 
-Looking at the top 10% and top 5% customer lists, we can see that 
+Looking at the top 10% and top 5% customer lists again across all Random Forest models we can see that the overlap is partially very high. The reduced and the grid search model have a rather high overlap with 0.78 and 0.62 respectively for top 10% and top 5% of customers. While the reduced and the normal Random Forest model share less overlap at 0.66 for top 10% and 0.56 for top 5% of customers. We do however see that the grid search and normal Random Forest share a similar overlap to the grid search and reduced model.
 
 ## Breakdown of selected model on top and bottom prediction.
 
@@ -1270,6 +1293,8 @@ top_client = top_client.drop(columns=['has_card', 'client_id'])
 reduced_best_model_visualizer.plot_breakdown_test(top_client)
 ```
 
+Looking at a specific prediction we see how the features contribute to the prediction. The base balance is the most important feature, followed by the volume of the client. The other features have a much smaller impact on the prediction.
+
 ```{python}
 bottom_prob_client = customer_lists_reduced_rf.iloc[-1]['Client ID']
 print(customer_lists_reduced_rf.tail())
@@ -1281,5 +1306,31 @@ bottom_client = bottom_client.drop(columns=['has_card', 'client_id'])
 reduced_best_model_visualizer.plot_breakdown_test(bottom_client)
 ```
 
+Looking at the lowest probability feature we see how the features contribute to the prediction. 
+
 # Conclusion
+
+In this project, we have analyzed a dataset containing information about clients and their transactions to predict which clients are most likely to get a card. We looked at multiple different models and evaluated their performance using various evaluation metrics. 
+
+## To Non-Technical Stakeholders
+
+Across the board it appears as if high balances are important in predicting whether a client has a card or not. Generally speaking is a high balance count in the past 12 (+ 1 lag) months a strong indicator for a potential card buyer. The analysis also showed that with card holders having higher median balances across all months. 
+
+```{python}
+reduced_best_model_visualizer.plot_lift_curve_test()
+```
+
+Looking at the Lift Curve we can see that our model outperforms a random model by a big margin. Especially it is very good at identifying non-buyers, reducing risk of spending effort and time on clients that are unlikely to buy a card.
+
+
+Here is the top 5 client ids according to our model which currently do not have a card but are prime candidates for getting one:
+```{python}
+customer_lists_reduced_rf.head()
+```
+
+We hope that this helps you in the decision making process and that you can use this information to target potential customers who are likely to get a card.
+
+Good luck!
+
+Dominik & Noah
 
